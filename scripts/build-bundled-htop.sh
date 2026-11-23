@@ -2,9 +2,10 @@
 #
 # Wrapper around the third_party/android-htop (arter97/android-htop) git submodule.
 # Builds self-contained htop binaries for all app ABIs (arm64-v8a, armeabi-v7a, x86_64),
-# verifies 16 KB ELF LOAD alignment on 64-bit ABIs, installs them into
-# app/src/main/jniLibs/<abi>/libhtop_bundled.so, and records build metadata in
-# third_party/VERSIONS.txt while keeping the submodule working tree clean.
+# enforces reproducible build flags (-ffile-prefix-map, SOURCE_DATE_EPOCH) and SHA-256
+# source tarball verification, verifies 16 KB ELF LOAD alignment on 64-bit ABIs,
+# installs them into app/src/main/jniLibs/<abi>/libhtop_bundled.so, and records build
+# metadata in third_party/VERSIONS.txt while keeping the submodule working tree clean.
 #
 # Offline / F-Droid build support:
 #   - Defaults HTOP_VERSION and NCURSES_VERSION from third_party/VERSIONS.txt so
@@ -52,15 +53,25 @@ done
 export ABIS="${ABIS:-arm64-v8a armeabi-v7a x86_64}"
 export API="${API:-26}"
 export WORK="$WORK_DIR"
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-315532800}"
+
+PINNED_NCURSES_VERSION=""
+PINNED_NCURSES_SHA256=""
+PINNED_HTOP_VERSION=""
+PINNED_HTOP_SHA256=""
+if [ -f "$VERSIONS_FILE" ]; then
+  PINNED_NCURSES_VERSION="$(sed -n 's/^ncurses=//p' "$VERSIONS_FILE" | head -n1)"
+  PINNED_NCURSES_SHA256="$(sed -n 's/^ncurses_sha256=//p' "$VERSIONS_FILE" | head -n1)"
+  PINNED_HTOP_VERSION="$(sed -n 's/^htop=//p' "$VERSIONS_FILE" | head -n1)"
+  PINNED_HTOP_SHA256="$(sed -n 's/^htop_sha256=//p' "$VERSIONS_FILE" | head -n1)"
+fi
 
 # Default pinned versions from third_party/VERSIONS.txt so offline builds never query the network.
-if [ -z "${NCURSES_VERSION:-}" ] && [ -f "$VERSIONS_FILE" ]; then
-  NCURSES_VERSION="$(sed -n 's/^ncurses=//p' "$VERSIONS_FILE" | head -n1)"
-  export NCURSES_VERSION
+if [ -z "${NCURSES_VERSION:-}" ] && [ -n "$PINNED_NCURSES_VERSION" ]; then
+  export NCURSES_VERSION="$PINNED_NCURSES_VERSION"
 fi
-if [ -z "${HTOP_VERSION:-}" ] && [ -f "$VERSIONS_FILE" ]; then
-  HTOP_VERSION="$(sed -n 's/^htop=//p' "$VERSIONS_FILE" | head -n1)"
-  export HTOP_VERSION
+if [ -z "${HTOP_VERSION:-}" ] && [ -n "$PINNED_HTOP_VERSION" ]; then
+  export HTOP_VERSION="$PINNED_HTOP_VERSION"
 fi
 
 # Auto-detect ANDROID_NDK_HOME from ANDROID_HOME / ANDROID_SDK_ROOT if unset (e.g. on F-Droid).
@@ -87,6 +98,14 @@ if [ ! -x "$SUBMODULE_DIR/build.sh" ]; then
 fi
 
 mkdir -p "$WORK_DIR"
+
+# Inject reproducible path-mapping flags into autoconf configure runs via CONFIG_SITE
+# without modifying the upstream third_party/android-htop submodule.
+CONFIG_SITE_FILE="$WORK_DIR/config.site"
+cat > "$CONFIG_SITE_FILE" <<EOF
+CFLAGS="\${CFLAGS:-} -ffile-prefix-map=$WORK_DIR=/build -fdebug-prefix-map=$WORK_DIR=/build"
+EOF
+export CONFIG_SITE="$CONFIG_SITE_FILE"
 
 # Stage offline ncurses source directory if provided (e.g. F-Droid srclibs).
 if [ -n "${NCURSES_SRC_DIR:-}" ]; then
@@ -128,6 +147,32 @@ fi
 
 "$SUBMODULE_DIR/build.sh" "${PASSTHROUGH_ARGS[@]}"
 
+# Verify SHA-256 of downloaded tarballs when non-empty archives exist in WORK_DIR.
+NCURSES_TAR="$WORK_DIR/ncurses-${NCURSES_VERSION:-}.tar.gz"
+HTOP_TAR="$WORK_DIR/htop-${HTOP_VERSION:-}.tar.xz"
+ACTUAL_NCURSES_SHA256="$PINNED_NCURSES_SHA256"
+ACTUAL_HTOP_SHA256="$PINNED_HTOP_SHA256"
+
+if [ -s "$NCURSES_TAR" ]; then
+  ACTUAL_NCURSES_SHA256="$(sha256sum "$NCURSES_TAR" | awk '{print $1}')"
+  if [ "${NCURSES_VERSION:-}" = "$PINNED_NCURSES_VERSION" ] && [ -n "$PINNED_NCURSES_SHA256" ]; then
+    if [ "$ACTUAL_NCURSES_SHA256" != "$PINNED_NCURSES_SHA256" ]; then
+      echo "ERROR: ncurses tarball SHA-256 mismatch: expected $PINNED_NCURSES_SHA256, got $ACTUAL_NCURSES_SHA256" >&2
+      exit 1
+    fi
+  fi
+fi
+
+if [ -s "$HTOP_TAR" ]; then
+  ACTUAL_HTOP_SHA256="$(sha256sum "$HTOP_TAR" | awk '{print $1}')"
+  if [ "${HTOP_VERSION:-}" = "$PINNED_HTOP_VERSION" ] && [ -n "$PINNED_HTOP_SHA256" ]; then
+    if [ "$ACTUAL_HTOP_SHA256" != "$PINNED_HTOP_SHA256" ]; then
+      echo "ERROR: htop tarball SHA-256 mismatch: expected $PINNED_HTOP_SHA256, got $ACTUAL_HTOP_SHA256" >&2
+      exit 1
+    fi
+  fi
+fi
+
 READELF=""
 if [ -n "${ANDROID_NDK_HOME:-}" ] && [ -x "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" ]; then
   READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
@@ -157,9 +202,18 @@ for abi in $ABIS; do
 done
 
 SUBMODULE_COMMIT="$(git -C "$SUBMODULE_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+BUILT_NDK="$(sed -n 's/^ndk=//p' "$SUBMODULE_DIR/dist/versions.txt")"
+BUILT_NCURSES="$(sed -n 's/^ncurses=//p' "$SUBMODULE_DIR/dist/versions.txt")"
+BUILT_HTOP="$(sed -n 's/^htop=//p' "$SUBMODULE_DIR/dist/versions.txt")"
+BUILT_API="$(sed -n 's/^api=//p' "$SUBMODULE_DIR/dist/versions.txt")"
 {
   echo "submodule_commit=$SUBMODULE_COMMIT"
-  cat "$SUBMODULE_DIR/dist/versions.txt"
+  echo "ndk=$BUILT_NDK"
+  echo "ncurses=$BUILT_NCURSES"
+  [ -n "$ACTUAL_NCURSES_SHA256" ] && echo "ncurses_sha256=$ACTUAL_NCURSES_SHA256"
+  echo "htop=$BUILT_HTOP"
+  [ -n "$ACTUAL_HTOP_SHA256" ] && echo "htop_sha256=$ACTUAL_HTOP_SHA256"
+  echo "api=$BUILT_API"
 } > "$VERSIONS_FILE"
 
 echo "==> Installed bundled htop binaries into $JNI_TARGET_DIR"

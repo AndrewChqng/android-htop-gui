@@ -3,7 +3,7 @@ project(htoppty C)
 
 add_library(htoppty SHARED pty.c)
 
-target_compile_options(htoppty PRIVATE -Wall -Wextra -Werror=implicit-function-declaration -O2)
+target_compile_options(htoppty PRIVATE -Wall -Wextra -Werror=implicit-function-declaration -O2 "-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.")
 target_link_options(htoppty PRIVATE -Wl,-z,max-page-size=16384)
 
 find_library(log-lib log)

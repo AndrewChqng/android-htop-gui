@@ -1,6 +1,8 @@
-# Third-Party Notices
+# Third-Party Notices & Licensing
 
-This project includes or adapts third-party open-source components:
+The `android-htop-gui` application source code is licensed under **`GPL-3.0-or-later OR GPL-2.0-or-later`** (at your option; see [`LICENSE`](LICENSE)) so that combined distributions with the standalone `GPL-2.0-only` `htop` executable are unambiguously compatible under both mere-aggregation and combined-work interpretations (`SPDX-License-Identifier: GPL-3.0-or-later AND GPL-2.0-only`).
+
+This project includes or adapts the following third-party open-source components:
 
 ## android-htop-gui
 - **License**: GNU General Public License v3.0 or later (`GPL-3.0-or-later`)
