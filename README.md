@@ -60,9 +60,11 @@ ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/28.2.13676358 \
 
 Requirements: Android SDK (`compileSdk 36`, NDK `28.2.13676358`, CMake `3.22.1`), JDK 21, `adb`.
 
+Builds produce per-ABI split APKs (`arm64-v8a`, `armeabi-v7a`, `x86_64`), a combined `universal` APK, and a bundletool APK Set archive (`app-<buildType>.apks`) under `app/build/outputs/apk/<buildType>/`:
+
 ```bash
 JAVA_HOME=/home/roboy/.jdks/jdk-21 ./gradlew testDebugUnitTest assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 adb shell am start -n com.andrewchqng.htop/.MainActivity
 ```
 

@@ -10,6 +10,7 @@ app/.cxx/
 .idea/
 *.iml
 *.apk
+*.apks
 *.aab
 *.ap_
 *.dex

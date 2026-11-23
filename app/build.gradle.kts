@@ -15,10 +15,15 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 5
-        versionName = "1.4.0"
+        versionName = "1.3.0"
+    }
 
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = true
         }
     }
 
@@ -91,6 +96,31 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
+    }
+}
+
+tasks.matching { it.name == "buildReleasePreBundle" }.configureEach {
+    doFirst {
+        val dir = layout.buildDirectory
+            .dir("intermediates/shrunk_resources_proto_format/release/minifyReleaseWithR8")
+            .get()
+            .asFile
+        dir.listFiles()
+            ?.filter { it.name.endsWith(".ap_") && !it.name.contains("universal") }
+            ?.forEach { it.delete() }
+    }
+}
+
+listOf("Debug" to "debug", "Release" to "release").forEach { (cap, lower) ->
+    val copyApks = tasks.register<Copy>("package${cap}Apks") {
+        dependsOn("makeApkFromBundleFor$cap")
+        mustRunAfter("package$cap", "create${cap}ApkListingFileRedirect")
+        from(layout.buildDirectory.file("intermediates/apks_from_bundle/$lower/makeApkFromBundleFor$cap/bundle.apks"))
+        into(layout.buildDirectory.dir("outputs/apk/$lower"))
+        rename("bundle.apks", "app-$lower.apks")
+    }
+    tasks.matching { it.name == "assemble$cap" }.configureEach {
+        finalizedBy(copyApks)
     }
 }
 
