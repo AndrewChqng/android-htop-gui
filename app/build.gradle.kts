@@ -1,5 +1,11 @@
+import com.android.bundle.Commands.BuildApksResult
+import com.android.bundle.Targeting.SdkVersionTargeting
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
+import java.util.zip.CRC32
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 plugins {
     id("com.android.application")
@@ -112,15 +118,73 @@ tasks.matching { it.name == "buildReleasePreBundle" }.configureEach {
 }
 
 listOf("Debug" to "debug", "Release" to "release").forEach { (cap, lower) ->
-    val copyApks = tasks.register<Copy>("package${cap}Apks") {
+    val packageApks = tasks.register("package${cap}Apks") {
         dependsOn("makeApkFromBundleFor$cap")
         mustRunAfter("package$cap", "create${cap}ApkListingFileRedirect")
-        from(layout.buildDirectory.file("intermediates/apks_from_bundle/$lower/makeApkFromBundleFor$cap/bundle.apks"))
-        into(layout.buildDirectory.dir("outputs/apk/$lower"))
-        rename("bundle.apks", "app-$lower.apks")
+        val inputApks = layout.buildDirectory.file("intermediates/apks_from_bundle/$lower/makeApkFromBundleFor$cap/bundle.apks")
+        val outputApks = layout.buildDirectory.file("outputs/apk/$lower/app-$lower.apks")
+        inputs.file(inputApks)
+        outputs.file(outputApks)
+        doLast {
+            val inFile = inputApks.get().asFile
+            val outFile = outputApks.get().asFile
+            outFile.parentFile.mkdirs()
+
+            ZipFile(inFile).use { zipIn ->
+                val tocEntry = zipIn.getEntry("toc.pb")
+                    ?: error("Missing toc.pb in ${inFile.absolutePath}")
+                val originalToc = zipIn.getInputStream(tocEntry).use { BuildApksResult.parseFrom(it) }
+                val primaryVariant = originalToc.getVariant(0)
+                val cleanVariant = primaryVariant.toBuilder()
+                    .setTargeting(
+                        primaryVariant.targeting.toBuilder()
+                            .setSdkVersionTargeting(
+                                SdkVersionTargeting.newBuilder()
+                                    .addValue(primaryVariant.targeting.sdkVersionTargeting.getValue(0))
+                                    .build(),
+                            )
+                            .build(),
+                    )
+                    .clearVariantNumber()
+                    .build()
+                val cleanToc = originalToc.toBuilder()
+                    .clearVariant()
+                    .addVariant(cleanVariant)
+                    .clearLocalTestingInfo()
+                    .build()
+                val allowedPaths = cleanVariant.apkSetList
+                    .flatMap { it.apkDescriptionList }
+                    .map { it.path }
+                    .toSet()
+
+                ZipOutputStream(outFile.outputStream().buffered()).use { zipOut ->
+                    fun writeStoredEntry(name: String, bytes: ByteArray) {
+                        val crc = CRC32().apply { update(bytes) }.value
+                        val entry = ZipEntry(name).apply {
+                            method = ZipEntry.STORED
+                            size = bytes.size.toLong()
+                            compressedSize = bytes.size.toLong()
+                            this.crc = crc
+                            time = 347158860000L
+                        }
+                        zipOut.putNextEntry(entry)
+                        zipOut.write(bytes)
+                        zipOut.closeEntry()
+                    }
+
+                    writeStoredEntry("toc.pb", cleanToc.toByteArray())
+                    for (path in allowedPaths) {
+                        val entry = zipIn.getEntry(path)
+                            ?: error("Missing split entry $path in ${inFile.absolutePath}")
+                        val bytes = zipIn.getInputStream(entry).use { it.readBytes() }
+                        writeStoredEntry(path, bytes)
+                    }
+                }
+            }
+        }
     }
     tasks.matching { it.name == "assemble$cap" }.configureEach {
-        finalizedBy(copyApks)
+        finalizedBy(packageApks)
     }
 }
 
