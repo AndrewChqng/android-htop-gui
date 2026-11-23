@@ -1,0 +1,1 @@
+-keep class com.andrewchqng.htop.pty.PtyNative { *; }

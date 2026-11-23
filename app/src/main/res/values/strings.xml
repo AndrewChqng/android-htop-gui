@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">htop</string>
+    <string name="btn_restart_root">Restart (Root)</string>
+    <string name="btn_run_non_root">Run Non-Root</string>
+    <string name="btn_close">Close</string>
+</resources>
