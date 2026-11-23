@@ -135,6 +135,28 @@ listOf("Debug" to "debug", "Release" to "release").forEach { (cap, lower) ->
                     ?: error("Missing toc.pb in ${inFile.absolutePath}")
                 val originalToc = zipIn.getInputStream(tocEntry).use { BuildApksResult.parseFrom(it) }
                 val primaryVariant = originalToc.getVariant(0)
+                val appId = android.defaultConfig.applicationId ?: "com.andrewchqng.htop"
+                val pathRemap = LinkedHashMap<String, String>()
+
+                val remappedApkSets = primaryVariant.apkSetList.map { apkSet ->
+                    val remappedDescriptions = apkSet.apkDescriptionList.map { desc ->
+                        val newPath = if (desc.hasSplitApkMetadata() && desc.splitApkMetadata.isMasterSplit) {
+                            "splits/$appId-base.apk"
+                        } else {
+                            val splitId = desc.splitApkMetadata.splitId.ifEmpty {
+                                desc.path.substringAfterLast('/').removePrefix("base-")
+                            }
+                            "splits/$splitId.apk"
+                        }
+                        pathRemap[desc.path] = newPath
+                        desc.toBuilder().setPath(newPath).build()
+                    }
+                    apkSet.toBuilder()
+                        .clearApkDescription()
+                        .addAllApkDescription(remappedDescriptions)
+                        .build()
+                }
+
                 val cleanVariant = primaryVariant.toBuilder()
                     .setTargeting(
                         primaryVariant.targeting.toBuilder()
@@ -146,16 +168,14 @@ listOf("Debug" to "debug", "Release" to "release").forEach { (cap, lower) ->
                             .build(),
                     )
                     .clearVariantNumber()
+                    .clearApkSet()
+                    .addAllApkSet(remappedApkSets)
                     .build()
                 val cleanToc = originalToc.toBuilder()
                     .clearVariant()
                     .addVariant(cleanVariant)
                     .clearLocalTestingInfo()
                     .build()
-                val allowedPaths = cleanVariant.apkSetList
-                    .flatMap { it.apkDescriptionList }
-                    .map { it.path }
-                    .toSet()
 
                 ZipOutputStream(outFile.outputStream().buffered()).use { zipOut ->
                     fun writeStoredEntry(name: String, bytes: ByteArray) {
@@ -173,11 +193,11 @@ listOf("Debug" to "debug", "Release" to "release").forEach { (cap, lower) ->
                     }
 
                     writeStoredEntry("toc.pb", cleanToc.toByteArray())
-                    for (path in allowedPaths) {
-                        val entry = zipIn.getEntry(path)
-                            ?: error("Missing split entry $path in ${inFile.absolutePath}")
+                    for ((oldPath, newPath) in pathRemap) {
+                        val entry = zipIn.getEntry(oldPath)
+                            ?: error("Missing split entry $oldPath in ${inFile.absolutePath}")
                         val bytes = zipIn.getInputStream(entry).use { it.readBytes() }
-                        writeStoredEntry(path, bytes)
+                        writeStoredEntry(newPath, bytes)
                     }
                 }
             }

@@ -2,6 +2,8 @@
 
 Lightweight native Android application that launches `htop` inside a native pseudo-terminal (PTY) — via root (`su`), [Shizuku](https://shizuku.rikka.app/), or non-root — and passes through touch, hardware mouse/scroll wheel, hardware keyboard, virtual keyboard (IME), and a compact extra-keys toolbar directly to the TUI.
 
+<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.andrewchqng.htop%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FAndrewChqng%2Fandroid-htop-gui%22%2C%22author%22%3A%22AndrewChqng%22%2C%22name%22%3A%22Android%20htop%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%7D%22%7D"><img src="docs/badge_obtainium.png" alt="Get it on Obtainium" height="56"></a>
+
 ![Android htop running as root on LineageOS](docs/screenshots/htop-root.png)
 
 ## Requirements & Execution Modes
