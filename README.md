@@ -28,6 +28,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.andrewchqng.htop/.MainActivity
 ```
 
+### Release Signing
+
+Release builds use APK Signature Scheme v2/v3 (PKCS12, RSA 4096-bit, `isMinifyEnabled = true`, `isShrinkResources = true`, no Google dependency metadata blobs). Copy [`keystore.properties.example`](keystore.properties.example) to a gitignored `keystore.properties` file or provide environment variables (`ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`), then run:
+
+```bash
+JAVA_HOME=/home/roboy/.jdks/jdk-21 ./gradlew testDebugUnitTest assembleRelease
+```
+
 ---
 
 *Built with assistance from Antigravity (Google DeepMind). Experimental root system utility — behavior depends on your ROM's `htop` binary, `terminfo` database, and `su`/SELinux policy; verify on your target device before relying on it in production workflows.*
