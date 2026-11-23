@@ -2,6 +2,8 @@
 
 Lightweight native Android application that launches the device's local `htop` binary as `root` inside a native pseudo-terminal (PTY) and passes through touch, hardware mouse/scroll wheel, hardware keyboard, virtual keyboard (IME), and a compact extra-keys toolbar directly to the `htop` TUI.
 
+![Android htop running as root on LineageOS](docs/screenshots/htop-root.png)
+
 ## Requirements
 
 > [!IMPORTANT]
@@ -11,6 +13,18 @@ Lightweight native Android application that launches the device's local `htop` b
   - **Shizuku Mode (No Root Required)**: When root (`su`) is unavailable or denied and [Shizuku](https://shizuku.rikka.app/) is running (ADB/wireless debugging or root server), the app automatically falls back to a Shizuku `UserService` (`ShizukuPtyService`) running the native `/dev/ptmx` PTY inside Shizuku's privileged `shell` (UID `2000`, `readproc`) or root context. You can also cycle `ROOT` / `SHZ` / `USER` manually via the toolbar pill or exit banner.
 - **LineageOS or Custom ROM with `htop` Built In**: Built for LineageOS (which ships `/system_ext/bin/htop` and `/system_ext/etc/terminfo`) and other custom ROMs/devices with `htop` preinstalled. Also checks `/system/bin/htop`, `/system/xbin/htop`, `/data/local/tmp/htop`, and Termux's `htop` as fallbacks.
 - **Automatic `top` Fallback & Live Mode Switch**: If `htop` is not present on the device, the app automatically falls back to Android's built-in `top` (`/system/bin/top -d 1`). You can also switch between `htop` and `top` anytime via the `⇄top` / `⇄htop` button in the extra-keys bar or exit banner.
+
+## Screenshots
+
+| Root Mode (`htop` on LineageOS) | Shizuku Mode (`F5` Tree View, No Root) |
+| :---: | :---: |
+| ![Root Mode htop](docs/screenshots/htop-root.png) | ![Shizuku Mode F5 Tree View](docs/screenshots/htop-tree-shizuku.png) |
+| **`ROOT`** — native `/system_ext/bin/htop` with full `/proc` visibility and extra-keys bar | **`SHZ`** — Shizuku `UserService` PTY + `F5` process tree view without root |
+
+| Interactive `F3` Search | Built-in `top` Fallback (`⇄top` / `⇄htop`) |
+| :---: | :---: |
+| ![Interactive F3 Search](docs/screenshots/htop-search.png) | ![Shizuku Mode top Fallback](docs/screenshots/top-shizuku.png) |
+| Live **`F3` Search** (`F4` filter, `F6` sort, pinch-zoom & touch scroll/tap) | Automatic **`top -d 1`** fallback and one-tap live mode switching |
 
 ## Architecture & Features
 
