@@ -105,6 +105,25 @@ android {
     }
 }
 
+val ensureBundledHtop = tasks.register<Exec>("ensureBundledHtop") {
+    val jniDir = layout.projectDirectory.dir("src/main/jniLibs").asFile
+    val requiredAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+    val forceFromSource = providers.gradleProperty("buildBundledHtopFromSource")
+        .map { it.equals("true", ignoreCase = true) }
+        .getOrElse(false)
+    onlyIf {
+        forceFromSource || requiredAbis.any { abi ->
+            !File(jniDir, "$abi/libhtop_bundled.so").exists()
+        }
+    }
+    workingDir = rootProject.projectDir
+    commandLine("bash", rootProject.file("scripts/build-bundled-htop.sh").absolutePath)
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(ensureBundledHtop)
+}
+
 tasks.matching { it.name == "buildReleasePreBundle" }.configureEach {
     doFirst {
         val dir = layout.buildDirectory
