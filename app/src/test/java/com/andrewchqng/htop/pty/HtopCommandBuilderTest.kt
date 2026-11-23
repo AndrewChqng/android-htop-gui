@@ -41,7 +41,34 @@ class HtopCommandBuilderTest {
             asRoot = false,
         )
         assertTrue(cmd.contains("exec \"\$HTOP\""))
+        assertTrue(cmd.contains("exec \"\$TOP\" -d 1"))
         assertFalse(cmd.contains("su -i -c"))
+    }
+
+    @Test
+    fun testBuildCommandTopModeSkipsHtopAndRunsTop() {
+        val rootTop = HtopCommandBuilder.buildCommand(
+            configDir = "/data/data/pkg/files/config",
+            homeDir = "/data/data/pkg/files",
+            asRoot = true,
+            extraArgs = listOf("-H"),
+            mode = MonitorMode.TOP,
+        )
+        assertFalse(rootTop.contains("/system_ext/bin/htop"))
+        assertTrue(rootTop.contains("exec \"\$TOP\" -d 1"))
+        assertTrue(rootTop.contains("-H"))
+        assertTrue(rootTop.contains("exec \"\$SU\" -i -c \"\$CMD\""))
+
+        val nonRootTop = HtopCommandBuilder.buildCommand(
+            configDir = "/data/data/pkg/files/config",
+            homeDir = "/data/data/pkg/files",
+            asRoot = false,
+            extraArgs = listOf("-H"),
+            mode = MonitorMode.TOP,
+        )
+        assertFalse(nonRootTop.contains("/system_ext/bin/htop"))
+        assertTrue(nonRootTop.contains("exec \"\$TOP\" -d 1 '-H'"))
+        assertFalse(nonRootTop.contains("su -i -c"))
     }
 
     @Test

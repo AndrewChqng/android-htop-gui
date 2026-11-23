@@ -116,4 +116,20 @@ class TerminalEmulatorTest {
         assertEquals(0, emu.buffer.cursorRow)
         assertEquals(4, emu.buffer.cursorCol)
     }
+
+    @Test
+    fun testToyboxTopStartupAndDsrScreenProbe() {
+        var reply = ""
+        val emu = TerminalEmulator(initialCols = 80, initialRows = 24) { bytes ->
+            reply = String(bytes, StandardCharsets.US_ASCII)
+        }
+        feed(
+            emu,
+            "\u001B[s\u001B[999C\u001B[999B\u001B[6n\u001B[u\u001B[H\u001B[J\u001B[?25l" +
+                "Tasks: 599 total,   2 running, 597 sleeping",
+        )
+        assertEquals("\u001B[24;80R", reply)
+        assertEquals("Tasks: 599 total,   2 running, 597 sleeping", emu.buffer.rowText(0))
+        assertFalse(emu.buffer.cursorVisible)
+    }
 }

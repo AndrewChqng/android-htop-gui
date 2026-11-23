@@ -1,5 +1,10 @@
 package com.andrewchqng.htop.pty
 
+enum class MonitorMode(val label: String) {
+    HTOP("htop"),
+    TOP("top"),
+}
+
 object HtopCommandBuilder {
 
     private const val EXTENDED_PATH =
@@ -19,11 +24,26 @@ object HtopCommandBuilder {
         return sb.toString()
     }
 
+    private fun StringBuilder.appendTopLookupAndExec(notFoundMsg: String, args: List<String>) {
+        append("TOP=\$(command -v top 2>/dev/null); ")
+        append("if [ -z \"\$TOP\" ]; then ")
+        append("for p in /system/bin/top /system/xbin/top /vendor/bin/top /data/data/com.termux/files/usr/bin/top; do ")
+        append("if [ -x \"\$p\" ]; then TOP=\"\$p\"; break; fi; ")
+        append("done; ")
+        append("fi; ")
+        append("if [ -z \"\$TOP\" ]; then echo ").append(shellQuoteSingle(notFoundMsg)).append(" >&2; exit 127; fi; ")
+        append("exec \"\$TOP\" -d 1")
+        for (arg in args) {
+            append(' ').append(shellQuoteSingle(arg))
+        }
+    }
+
     fun buildCommand(
         configDir: String,
         homeDir: String,
         asRoot: Boolean,
         extraArgs: List<String> = emptyList(),
+        mode: MonitorMode = MonitorMode.HTOP,
     ): String {
         val quotedConfig = shellQuoteSingle(configDir)
         val quotedHome = shellQuoteSingle(homeDir)
@@ -39,22 +59,29 @@ object HtopCommandBuilder {
             append("mkdir -p ").append(quotedConfig).append(" ").append(shellQuoteSingle("$configDir/htop")).append(" 2>/dev/null || true; ")
             append("export XDG_CONFIG_HOME=").append(quotedConfig).append("; ")
             append("export HOME=").append(quotedHome).append("; ")
-            append("HTOP=$(command -v htop 2>/dev/null); ")
-            append("if [ -z \"\$HTOP\" ]; then ")
-            append("for p in /system_ext/bin/htop /system/bin/htop /system/xbin/htop /data/local/tmp/htop /data/data/com.termux/files/usr/bin/htop; do ")
-            append("if [ -x \"\$p\" ]; then HTOP=\"\$p\"; break; fi; ")
-            append("done; ")
-            append("fi; ")
-            append("if [ -z \"\$HTOP\" ]; then echo \"Error: htop binary not found on device.\" >&2; exit 127; fi; ")
-            append("case \"\$HTOP\" in /data/data/com.termux/*) ")
-            append("export LD_LIBRARY_PATH=\"/data/data/com.termux/files/usr/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\"; ")
-            append("if [ -d /data/data/com.termux/files/usr/share/terminfo ]; then ")
-            append("export TERMINFO=/data/data/com.termux/files/usr/share/terminfo; ")
-            append("fi;; ")
-            append("esac; ")
-            append("exec \"\$HTOP\"")
-            for (arg in extraArgs) {
-                append(' ').append(shellQuoteSingle(arg))
+
+            if (mode == MonitorMode.HTOP) {
+                append("HTOP=\$(command -v htop 2>/dev/null); ")
+                append("if [ -z \"\$HTOP\" ]; then ")
+                append("for p in /system_ext/bin/htop /system/bin/htop /system/xbin/htop /data/local/tmp/htop /data/data/com.termux/files/usr/bin/htop; do ")
+                append("if [ -x \"\$p\" ]; then HTOP=\"\$p\"; break; fi; ")
+                append("done; ")
+                append("fi; ")
+                append("if [ -n \"\$HTOP\" ]; then ")
+                append("case \"\$HTOP\" in /data/data/com.termux/*) ")
+                append("export LD_LIBRARY_PATH=\"/data/data/com.termux/files/usr/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\"; ")
+                append("if [ -d /data/data/com.termux/files/usr/share/terminfo ]; then ")
+                append("export TERMINFO=/data/data/com.termux/files/usr/share/terminfo; ")
+                append("fi;; ")
+                append("esac; ")
+                append("exec \"\$HTOP\"")
+                for (arg in extraArgs) {
+                    append(' ').append(shellQuoteSingle(arg))
+                }
+                append("; fi; ")
+                appendTopLookupAndExec("Error: neither htop nor top binary found on device.", emptyList())
+            } else {
+                appendTopLookupAndExec("Error: top binary not found on device.", extraArgs)
             }
         }.toString()
 

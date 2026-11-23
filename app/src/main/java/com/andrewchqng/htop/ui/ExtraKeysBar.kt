@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.andrewchqng.htop.pty.MonitorMode
 
 class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalView.ModifierDelegate {
 
@@ -19,9 +20,11 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
     var onToggleKeyboard: (() -> Unit)? = null
     var onZoomDelta: ((Float) -> Unit)? = null
     var onRestartRequested: (() -> Unit)? = null
+    var onToggleMonitorMode: (() -> Unit)? = null
 
     private var ctrlSticky = false
     private lateinit var ctrlButton: TextView
+    private lateinit var modeButton: TextView
 
     private val row = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -86,6 +89,11 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
         addActionButton("A-") { onZoomDelta?.invoke(-1f) }
         addActionButton("A+") { onZoomDelta?.invoke(+1f) }
         addActionButton("↻") { onRestartRequested?.invoke() }
+        modeButton = addActionButton("⇄top") { onToggleMonitorMode?.invoke() }
+    }
+
+    fun setMonitorMode(mode: MonitorMode) {
+        modeButton.text = if (mode == MonitorMode.HTOP) "⇄top" else "⇄htop"
     }
 
     private fun makeButton(label: String): TextView {

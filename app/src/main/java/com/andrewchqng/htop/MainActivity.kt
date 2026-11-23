@@ -18,6 +18,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.andrewchqng.htop.pty.HtopCommandBuilder
+import com.andrewchqng.htop.pty.MonitorMode
 import com.andrewchqng.htop.pty.PtySession
 import com.andrewchqng.htop.terminal.TerminalEmulator
 import com.andrewchqng.htop.ui.ExtraKeysBar
@@ -30,11 +31,13 @@ class MainActivity : Activity() {
     private lateinit var rootLayout: LinearLayout
     private lateinit var exitBanner: LinearLayout
     private lateinit var exitStatusText: TextView
+    private lateinit var switchModeBannerButton: Button
     private lateinit var terminalView: TerminalView
     private lateinit var extraKeysBar: ExtraKeysBar
 
     private var emulator: TerminalEmulator? = null
     private var session: PtySession? = null
+    private var monitorMode = MonitorMode.HTOP
     private var lastStartedAsRoot = true
     private var hasStartedOnce = false
     private var lastCols = 0
@@ -58,6 +61,9 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val defaultFontSp = if (resources.configuration.smallestScreenWidthDp >= 600) 12f else 10.5f
         val savedFontSp = prefs.getFloat(KEY_FONT_SP, defaultFontSp)
+        monitorMode = runCatching {
+            MonitorMode.valueOf(prefs.getString(KEY_MONITOR_MODE, MonitorMode.HTOP.name).orEmpty())
+        }.getOrDefault(MonitorMode.HTOP)
 
         rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -86,6 +92,10 @@ class MainActivity : Activity() {
         exitBanner.addView(makeBannerButton(getString(R.string.btn_run_non_root)) {
             startHtopSession(asRoot = false)
         })
+        switchModeBannerButton = makeBannerButton(bannerSwitchLabel(monitorMode)) {
+            toggleMonitorMode(prefs)
+        }
+        exitBanner.addView(switchModeBannerButton)
         exitBanner.addView(makeBannerButton(getString(R.string.btn_close)) {
             finish()
         })
@@ -95,7 +105,9 @@ class MainActivity : Activity() {
             setPadding(dp(2), dp(2), dp(2), dp(2))
         }
 
-        extraKeysBar = ExtraKeysBar(this)
+        extraKeysBar = ExtraKeysBar(this).apply {
+            setMonitorMode(monitorMode)
+        }
         terminalView.modifierDelegate = extraKeysBar
 
         rootLayout.addView(
@@ -190,12 +202,28 @@ class MainActivity : Activity() {
         extraKeysBar.onRestartRequested = {
             startHtopSession(asRoot = lastStartedAsRoot)
         }
+
+        extraKeysBar.onToggleMonitorMode = {
+            toggleMonitorMode(prefs)
+        }
     }
+
+    private fun toggleMonitorMode(prefs: android.content.SharedPreferences) {
+        monitorMode = if (monitorMode == MonitorMode.HTOP) MonitorMode.TOP else MonitorMode.HTOP
+        prefs.edit().putString(KEY_MONITOR_MODE, monitorMode.name).apply()
+        extraKeysBar.setMonitorMode(monitorMode)
+        switchModeBannerButton.text = bannerSwitchLabel(monitorMode)
+        startHtopSession(asRoot = lastStartedAsRoot)
+    }
+
+    private fun bannerSwitchLabel(mode: MonitorMode): String =
+        if (mode == MonitorMode.HTOP) "Switch to top" else "Switch to htop"
 
     private fun startHtopSession(asRoot: Boolean) {
         session?.close()
         session = null
         lastStartedAsRoot = asRoot
+        val activeMode = monitorMode
 
         val rows = lastRows.coerceAtLeast(1)
         val cols = lastCols.coerceAtLeast(1)
@@ -215,9 +243,11 @@ class MainActivity : Activity() {
             configDir = configDir,
             homeDir = homeDir,
             asRoot = asRoot,
+            mode = activeMode,
         )
         val envp = HtopCommandBuilder.buildEnvironment(homeDir = homeDir, configDir = configDir)
 
+        var createdSession: PtySession? = null
         val newSession = PtySession(
             command = command,
             envp = envp,
@@ -227,14 +257,15 @@ class MainActivity : Activity() {
             },
             onExit = { code ->
                 runOnUiThread {
-                    if (!isDestroyed && !isFinishing) {
-                        val mode = if (asRoot) "root" else "non-root"
-                        exitStatusText.text = "htop ($mode) exited ($code)"
+                    if (!isDestroyed && !isFinishing && session === createdSession) {
+                        val privilege = if (asRoot) "root" else "non-root"
+                        exitStatusText.text = "${activeMode.label} ($privilege) exited ($code)"
                         exitBanner.visibility = View.VISIBLE
                     }
                 }
             },
         )
+        createdSession = newSession
         session = newSession
         if (!newSession.start(rows, cols, lastWidthPx, lastHeightPx)) {
             val msg = "Failed to open PTY session.\r\n".toByteArray()
@@ -279,5 +310,6 @@ class MainActivity : Activity() {
     companion object {
         private const val PREFS_NAME = "htop_prefs"
         private const val KEY_FONT_SP = "font_sp"
+        private const val KEY_MONITOR_MODE = "monitor_mode"
     }
 }
