@@ -14,3 +14,5 @@ app/.cxx/
 *.ap_
 *.dex
 .DS_Store
+third_party/android-htop/build/
+third_party/android-htop/dist/

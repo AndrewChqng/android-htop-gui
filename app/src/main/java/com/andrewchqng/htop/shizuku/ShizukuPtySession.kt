@@ -176,7 +176,7 @@ class ShizukuPtySession(
                 .daemon(false)
                 .processNameSuffix("htoppty")
                 .debuggable(false)
-                .version(3)
+                .version(4)
                 .also { cachedArgs = it }
         }
 

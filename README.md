@@ -1,18 +1,15 @@
-# Android htop
+# android-htop-gui
 
-Lightweight native Android application that launches the device's local `htop` binary as `root` inside a native pseudo-terminal (PTY) and passes through touch, hardware mouse/scroll wheel, hardware keyboard, virtual keyboard (IME), and a compact extra-keys toolbar directly to the `htop` TUI.
+Lightweight native Android application that launches `htop` inside a native pseudo-terminal (PTY) — via root (`su`), [Shizuku](https://shizuku.rikka.app/), or non-root — and passes through touch, hardware mouse/scroll wheel, hardware keyboard, virtual keyboard (IME), and a compact extra-keys toolbar directly to the TUI.
 
 ![Android htop running as root on LineageOS](docs/screenshots/htop-root.png)
 
-## Requirements
+## Requirements & Execution Modes
 
-> [!IMPORTANT]
-> **This app requires BOTH root access and a ROM/environment that already has `htop` installed.** It does **not** bundle its own `htop` binary — it wraps the device's native `htop` and `terminfo` files.
-
-- **Root Access (`su`) or Shizuku Mode**: Root (`su`, e.g., MagiskSU / KernelSU) provides full `/proc` visibility and process signaling (`F7`/`F8`/`F9`). Uses `stty raw -echo` + `su -i -c` on MagiskSU for live `SIGWINCH` resize propagation (with automatic fallback to `su -c`).
-  - **Shizuku Mode (No Root Required)**: When root (`su`) is unavailable or denied and [Shizuku](https://shizuku.rikka.app/) is running (ADB/wireless debugging or root server), the app automatically falls back to a Shizuku `UserService` (`ShizukuPtyService`) running the native `/dev/ptmx` PTY inside Shizuku's privileged `shell` (UID `2000`, `readproc`) or root context. You can also cycle `ROOT` / `SHZ` / `USER` manually via the toolbar pill or exit banner.
-- **LineageOS or Custom ROM with `htop` Built In**: Built for LineageOS (which ships `/system_ext/bin/htop` and `/system_ext/etc/terminfo`) and other custom ROMs/devices with `htop` preinstalled. Also checks `/system/bin/htop`, `/system/xbin/htop`, `/data/local/tmp/htop`, and Termux's `htop` as fallbacks.
-- **Automatic `top` Fallback & Live Mode Switch**: If `htop` is not present on the device, the app automatically falls back to Android's built-in `top` (`/system/bin/top -d 1`). You can also switch between `htop` and `top` anytime via the `⇄top` / `⇄htop` button in the extra-keys bar or exit banner.
+- **Root Access (`su`) or Shizuku Mode (Optional Non-Root)**: Root (`su`, e.g., MagiskSU / KernelSU) provides full `/proc` visibility and process signaling (`F7`/`F8`/`F9`). Uses `stty raw -echo` + `su -i -c` on MagiskSU for live `SIGWINCH` resize propagation (with automatic fallback to `su -c`).
+  - **Shizuku Mode**: When root (`su`) is unavailable or denied and [Shizuku](https://shizuku.rikka.app/) is running (ADB/wireless debugging or root server), the app automatically falls back to a Shizuku `UserService` (`ShizukuPtyService`) running the native `/dev/ptmx` PTY inside Shizuku's privileged `shell` (UID `2000`, `readproc`) or root context. You can cycle `ROOT` / `SHZ` / `USER` manually via the toolbar pill or exit banner.
+- **LineageOS / System `htop` with Automatic `top` Fallback**: By default (**`HTOP`** mode), the app looks for the device's local `htop` (`/system_ext/bin/htop`, `/system/bin/htop`, `/system/xbin/htop`, `/data/local/tmp/htop`, or Termux) and automatically falls back to Android's built-in `top` (`/system/bin/top -d 1`) if system `htop` is absent.
+- **Optional Bundled `htop` (`arter97/android-htop` 3.5.3)**: On stock or locked-down ROMs without system `htop`, tap the **`HTOP`** / **`BND`** / **`TOP`** mode selector pill in the extra-keys toolbar (or **`Bundled htop`** in the exit banner) to switch to the bundled self-contained `htop 3.5.3` binary packaged via `jniLibs` (`libhtop_bundled.so`, statically linked against `ncurses` with compiled-in fallback terminfo entries, no `INTERNET` permission required). You can also switch cleanly to built-in `top` anytime.
 
 ## Screenshots
 
@@ -31,16 +28,26 @@ Lightweight native Android application that launches the device's local `htop` b
 - **Native PTY Bridge ([`pty.c`](app/src/main/cpp/pty.c), [`PtyNative.kt`](app/src/main/java/com/andrewchqng/htop/pty/PtyNative.kt), [`PtySession.kt`](app/src/main/java/com/andrewchqng/htop/pty/PtySession.kt))**:
   - Opens `/dev/ptmx` with `TIOCSWINSZ`, `IUTF8`, and clean FD/signal hygiene before `execve("/system/bin/sh", ...)`.
   - Runs dedicated background reader, writer, and process-waiter threads so UI/touch callbacks never block the main thread.
-- **Root `htop` Launcher ([`HtopCommandBuilder.kt`](app/src/main/java/com/andrewchqng/htop/pty/HtopCommandBuilder.kt))**:
-  - Sets `TERM=xterm-256color`, `COLORTERM=truecolor`, `LANG=C.UTF-8`, auto-detects device `TERMINFO` (e.g., `/system_ext/etc/terminfo`), and points `XDG_CONFIG_HOME` to app-private `files/config` so `htoprc` persists across runs.
-  - Uses `stty raw -echo` + `su -i -c` on MagiskSU (falling back to `su -c`) so `SIGWINCH` window resizes and raw input sequences propagate cleanly to root `htop`.
+- **Process Monitor Modes & Command Builder ([`HtopCommandBuilder.kt`](app/src/main/java/com/andrewchqng/htop/pty/HtopCommandBuilder.kt))**:
+  - Sets `TERM=xterm-256color`, `COLORTERM=truecolor`, `LANG=C.UTF-8`, auto-detects device `TERMINFO` (e.g., `/system_ext/etc/terminfo`), and points `XDG_CONFIG_HOME` to app-private `files/config` (or `/data/local/tmp/.android-htop-config` under Shizuku) so `htoprc` persists across runs.
+  - Supports **System `htop`** (`HTOP`, with automatic fallback to `top -d 1` if missing), **Bundled `htop`** (`BND`, from `nativeLibraryDir/libhtop_bundled.so` with `/data/local/tmp/.android-htop-bundled` fallback for strict SELinux `shell` contexts), and **System `top`** (`TOP`).
+  - Uses `stty raw -echo` + `su -i -c` on MagiskSU (falling back to `su -c`) so `SIGWINCH` window resizes and raw input sequences propagate cleanly.
 - **VT100 / xterm-256color Emulator & Canvas Renderer ([`TerminalEmulator.kt`](app/src/main/java/com/andrewchqng/htop/terminal/TerminalEmulator.kt), [`TerminalBuffer.kt`](app/src/main/java/com/andrewchqng/htop/terminal/TerminalBuffer.kt), [`TerminalView.kt`](app/src/main/java/com/andrewchqng/htop/ui/TerminalView.kt))**:
   - Supports alternate screen (`?1049h`/`l`), SGR 16/256/24-bit colors, DEC line-drawing & UTF-8, scroll regions (`DECSTBM`), `DECCKM` (`?1h`/`l`), and SGR 1006 / X10 mouse tracking (`?1006;1000h`).
   - Lock-free `Canvas` snapshot rendering with zero per-frame allocations.
 - **Full Input Passthrough ([`InputEncoder.kt`](app/src/main/java/com/andrewchqng/htop/ui/InputEncoder.kt), [`ExtraKeysBar.kt`](app/src/main/java/com/andrewchqng/htop/ui/ExtraKeysBar.kt))**:
   - **Touch**: tap rows, column headers, or `F1`–`F10` footer buttons (`SGR 1006` press+release); vertical drag scrolls the list (`wheel 64/65`); horizontal drag pans wide command lines (`Left`/`Right` arrows); two-finger pinch zooms font size (`7sp`–`28sp`) with live `SIGWINCH` reflow.
   - **Hardware Mouse**: left/middle/right clicks, drag tracking, and vertical/horizontal scroll wheel (`AXIS_VSCROLL`/`AXIS_HSCROLL`).
-  - **Keyboard & IME**: hardware keyboard (`F1`–`F12`, arrows, `Ctrl` combos, `Alt` combos, `Shift+Tab`), virtual IME (`BaseInputConnection`), and an extra-keys toolbar (`KB`, `ESC`, `TAB`, sticky `CTRL`, repeatable arrows, `F1`–`F10`, `A-`/`A+`, `↻`).
+  - **Keyboard & IME**: hardware keyboard (`F1`–`F12`, arrows, `Ctrl` combos, `Alt` combos, `Shift+Tab`), virtual IME (`BaseInputConnection`), and an extra-keys toolbar (`KB`, `ESC`, `TAB`, sticky `CTRL`, repeatable arrows, `F1`–`F10`, `A-`/`A+`, `↻`, `HTOP`/`BND`/`TOP`, `ROOT`/`SHZ`/`USER`).
+
+## Rebuilding Bundled `htop`
+
+Prebuilt stripped `libhtop_bundled.so` binaries (v`3.5.3` with compiled-in terminfo entries) live in `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/` via [`third_party/android-htop/build.sh`](third_party/android-htop/build.sh) (adapted from [`arter97/android-htop`](https://github.com/arter97/android-htop)). To rebuild them locally:
+
+```bash
+ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/28.2.13676358 \
+  third_party/android-htop/build.sh --install-jni
+```
 
 ## Build & Install
 
@@ -60,6 +67,10 @@ Release builds use APK Signature Scheme v2/v3 (PKCS12, RSA 4096-bit, `isMinifyEn
 JAVA_HOME=/home/roboy/.jdks/jdk-21 ./gradlew testDebugUnitTest assembleRelease
 ```
 
+## Credits & License Notices
+
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for full open-source attributions (`arter97/android-htop`, `htop-dev/htop` GPL-2.0-only, GNU `ncurses`, and `Shizuku`).
+
 ---
 
-*Built with assistance from Antigravity (Google DeepMind). Experimental root system utility — behavior depends on your ROM's `htop` binary, `terminfo` database, and `su`/SELinux policy; verify on your target device before relying on it in production workflows.*
+*Built with assistance from Antigravity (Google DeepMind). Experimental root/Shizuku system utility — behavior depends on your device/ROM `htop` or bundled `htop` binary, SELinux policy, and `su`/Shizuku permissions; verify on your target device before relying on it in production workflows.*

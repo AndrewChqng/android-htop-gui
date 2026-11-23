@@ -2,9 +2,10 @@ package com.andrewchqng.htop.pty
 
 import java.io.File
 
-enum class MonitorMode(val label: String) {
-    HTOP("htop"),
-    TOP("top"),
+enum class MonitorMode(val label: String, val badge: String) {
+    HTOP("htop", "HTOP"),
+    BUNDLED_HTOP("htop (bundled)", "BND"),
+    TOP("top", "TOP"),
 }
 
 object HtopCommandBuilder {
@@ -53,6 +54,12 @@ object HtopCommandBuilder {
         return sb.toString()
     }
 
+    private fun StringBuilder.appendQuotedArgs(args: List<String>) {
+        for (arg in args) {
+            append(' ').append(shellQuoteSingle(arg))
+        }
+    }
+
     private fun StringBuilder.appendTopLookupAndExec(notFoundMsg: String, args: List<String>) {
         append("TOP=\$(command -v top 2>/dev/null); ")
         append("if [ -z \"\$TOP\" ]; then ")
@@ -62,9 +69,7 @@ object HtopCommandBuilder {
         append("fi; ")
         append("if [ -z \"\$TOP\" ]; then echo ").append(shellQuoteSingle(notFoundMsg)).append(" >&2; exit 127; fi; ")
         append("exec \"\$TOP\" -d 1")
-        for (arg in args) {
-            append(' ').append(shellQuoteSingle(arg))
-        }
+        appendQuotedArgs(args)
     }
 
     fun buildCommand(
@@ -73,6 +78,7 @@ object HtopCommandBuilder {
         asRoot: Boolean,
         extraArgs: List<String> = emptyList(),
         mode: MonitorMode = MonitorMode.HTOP,
+        bundledHtopPath: String? = null,
     ): String {
         val quotedConfig = shellQuoteSingle(configDir)
         val quotedHome = shellQuoteSingle(homeDir)
@@ -89,28 +95,50 @@ object HtopCommandBuilder {
             append("export XDG_CONFIG_HOME=").append(quotedConfig).append("; ")
             append("export HOME=").append(quotedHome).append("; ")
 
-            if (mode == MonitorMode.HTOP) {
-                append("HTOP=\$(command -v htop 2>/dev/null); ")
-                append("if [ -z \"\$HTOP\" ]; then ")
-                append("for p in /system_ext/bin/htop /system/bin/htop /system/xbin/htop /data/local/tmp/htop /data/data/com.termux/files/usr/bin/htop; do ")
-                append("if [ -x \"\$p\" ]; then HTOP=\"\$p\"; break; fi; ")
-                append("done; ")
-                append("fi; ")
-                append("if [ -n \"\$HTOP\" ]; then ")
-                append("case \"\$HTOP\" in /data/data/com.termux/*) ")
-                append("export LD_LIBRARY_PATH=\"/data/data/com.termux/files/usr/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\"; ")
-                append("if [ -d /data/data/com.termux/files/usr/share/terminfo ]; then ")
-                append("export TERMINFO=/data/data/com.termux/files/usr/share/terminfo; ")
-                append("fi;; ")
-                append("esac; ")
-                append("exec \"\$HTOP\"")
-                for (arg in extraArgs) {
-                    append(' ').append(shellQuoteSingle(arg))
+            when (mode) {
+                MonitorMode.HTOP -> {
+                    append("HTOP=\$(command -v htop 2>/dev/null); ")
+                    append("if [ -z \"\$HTOP\" ]; then ")
+                    append("for p in /system_ext/bin/htop /system/bin/htop /system/xbin/htop /data/local/tmp/htop /data/data/com.termux/files/usr/bin/htop; do ")
+                    append("if [ -x \"\$p\" ]; then HTOP=\"\$p\"; break; fi; ")
+                    append("done; ")
+                    append("fi; ")
+                    append("if [ -n \"\$HTOP\" ]; then ")
+                    append("case \"\$HTOP\" in /data/data/com.termux/*) ")
+                    append("export LD_LIBRARY_PATH=\"/data/data/com.termux/files/usr/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\"; ")
+                    append("if [ -d /data/data/com.termux/files/usr/share/terminfo ]; then ")
+                    append("export TERMINFO=/data/data/com.termux/files/usr/share/terminfo; ")
+                    append("fi;; ")
+                    append("esac; ")
+                    append("exec \"\$HTOP\"")
+                    appendQuotedArgs(extraArgs)
+                    append("; fi; ")
+                    appendTopLookupAndExec("Error: neither htop nor top binary found on device.", emptyList())
                 }
-                append("; fi; ")
-                appendTopLookupAndExec("Error: neither htop nor top binary found on device.", emptyList())
-            } else {
-                appendTopLookupAndExec("Error: top binary not found on device.", extraArgs)
+                MonitorMode.BUNDLED_HTOP -> {
+                    if (bundledHtopPath.isNullOrBlank()) {
+                        append("echo 'Error: bundled htop binary is unavailable for this device ABI.' >&2; exit 127")
+                    } else {
+                        append("BUNDLED=").append(shellQuoteSingle(bundledHtopPath)).append("; ")
+                        append("if [ -r \"\$BUNDLED\" ]; then ")
+                        append("if [ -x \"\$BUNDLED\" ] && \"\$BUNDLED\" --version >/dev/null 2>&1; then ")
+                        append("exec \"\$BUNDLED\"")
+                        appendQuotedArgs(extraArgs)
+                        append("; elif [ -w /data/local/tmp ]; then ")
+                        append("TMP_HTOP=/data/local/tmp/.android-htop-bundled; ")
+                        append("if ! cmp -s \"\$BUNDLED\" \"\$TMP_HTOP\" 2>/dev/null; then ")
+                        append("cp \"\$BUNDLED\" \"\$TMP_HTOP.new.\$\$\" && chmod 700 \"\$TMP_HTOP.new.\$\$\" && mv -f \"\$TMP_HTOP.new.\$\$\" \"\$TMP_HTOP\"; ")
+                        append("fi; ")
+                        append("if [ -x \"\$TMP_HTOP\" ]; then exec \"\$TMP_HTOP\"")
+                        appendQuotedArgs(extraArgs)
+                        append("; fi; ")
+                        append("fi; fi; ")
+                        append("echo 'Error: failed to execute bundled htop binary.' >&2; exit 127")
+                    }
+                }
+                MonitorMode.TOP -> {
+                    appendTopLookupAndExec("Error: top binary not found on device.", extraArgs)
+                }
             }
         }.toString()
 

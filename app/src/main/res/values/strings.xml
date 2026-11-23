@@ -4,5 +4,8 @@
     <string name="btn_restart_root">Restart (Root)</string>
     <string name="btn_use_shizuku">Use Shizuku</string>
     <string name="btn_run_non_root">Run Non-Root</string>
+    <string name="btn_system_htop">System htop</string>
+    <string name="btn_bundled_htop">Bundled htop</string>
+    <string name="btn_use_top">Use top</string>
     <string name="btn_close">Close</string>
 </resources>

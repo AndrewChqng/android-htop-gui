@@ -10,6 +10,7 @@ import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.TextView
 import com.andrewchqng.htop.pty.ExecutionBackend
 import com.andrewchqng.htop.pty.MonitorMode
@@ -21,10 +22,12 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
     var onToggleKeyboard: (() -> Unit)? = null
     var onZoomDelta: ((Float) -> Unit)? = null
     var onRestartRequested: (() -> Unit)? = null
-    var onToggleMonitorMode: (() -> Unit)? = null
+    var onSelectMonitorMode: ((MonitorMode) -> Unit)? = null
     var onToggleBackend: (() -> Unit)? = null
 
     private var ctrlSticky = false
+    private var currentMode = MonitorMode.HTOP
+    private var bundledAvailable = true
     private lateinit var ctrlButton: TextView
     private lateinit var modeButton: TextView
     private lateinit var backendButton: TextView
@@ -92,30 +95,56 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
         addActionButton("A-") { onZoomDelta?.invoke(-1f) }
         addActionButton("A+") { onZoomDelta?.invoke(+1f) }
         addActionButton("↻") { onRestartRequested?.invoke() }
-        modeButton = addActionButton("⇄top") { onToggleMonitorMode?.invoke() }
+        modeButton = addActionButton(MonitorMode.HTOP.badge) { showMonitorModeMenu() }
         backendButton = addActionButton(ExecutionBackend.ROOT.badge) { onToggleBackend?.invoke() }
     }
 
-    fun setMonitorMode(mode: MonitorMode) {
-        modeButton.text = if (mode == MonitorMode.HTOP) "⇄top" else "⇄htop"
+    fun setMonitorMode(mode: MonitorMode, bundledHtopAvailable: Boolean = true) {
+        currentMode = mode
+        bundledAvailable = bundledHtopAvailable
+        modeButton.text = mode.badge
+        when (mode) {
+            MonitorMode.HTOP -> applyBadgeStyle(modeButton, 0xFF21262D.toInt(), 0xFF30363D.toInt(), 0xFFE6EDF3.toInt())
+            MonitorMode.BUNDLED_HTOP -> applyBadgeStyle(modeButton, 0xFF132F23.toInt(), 0xFF3FB950.toInt(), 0xFF56D364.toInt())
+            MonitorMode.TOP -> applyBadgeStyle(modeButton, 0xFF241D35.toInt(), 0xFFA371F7.toInt(), 0xFFD2A8FF.toInt())
+        }
     }
 
     fun setBackend(backend: ExecutionBackend) {
         backendButton.text = backend.badge
         when (backend) {
-            ExecutionBackend.ROOT -> {
-                backendButton.background = createPillDrawable(0xFF21262D.toInt(), 0xFF30363D.toInt())
-                backendButton.setTextColor(0xFFE6EDF3.toInt())
-            }
-            ExecutionBackend.SHIZUKU -> {
-                backendButton.background = createPillDrawable(0xFF132F38.toInt(), 0xFF22D3EE.toInt())
-                backendButton.setTextColor(0xFF67E8F9.toInt())
-            }
-            ExecutionBackend.NON_ROOT -> {
-                backendButton.background = createPillDrawable(0xFF2B2313.toInt(), 0xFFD29922.toInt())
-                backendButton.setTextColor(0xFFFACC15.toInt())
-            }
+            ExecutionBackend.ROOT -> applyBadgeStyle(backendButton, 0xFF21262D.toInt(), 0xFF30363D.toInt(), 0xFFE6EDF3.toInt())
+            ExecutionBackend.SHIZUKU -> applyBadgeStyle(backendButton, 0xFF132F38.toInt(), 0xFF22D3EE.toInt(), 0xFF67E8F9.toInt())
+            ExecutionBackend.NON_ROOT -> applyBadgeStyle(backendButton, 0xFF2B2313.toInt(), 0xFFD29922.toInt(), 0xFFFACC15.toInt())
         }
+    }
+
+    private fun showMonitorModeMenu() {
+        val popup = PopupMenu(context, modeButton)
+        val items = buildList {
+            add(MonitorMode.HTOP to "System htop (auto → top)")
+            if (bundledAvailable) {
+                add(MonitorMode.BUNDLED_HTOP to "Bundled htop (arter97)")
+            }
+            add(MonitorMode.TOP to "System top")
+        }
+        items.forEachIndexed { index, (mode, label) ->
+            val title = if (mode == currentMode) "✓ $label" else label
+            popup.menu.add(0, index, index, title)
+        }
+        popup.setOnMenuItemClickListener { item ->
+            val selected = items.getOrNull(item.itemId)?.first ?: return@setOnMenuItemClickListener false
+            if (selected != currentMode) {
+                onSelectMonitorMode?.invoke(selected)
+            }
+            true
+        }
+        popup.show()
+    }
+
+    private fun applyBadgeStyle(button: TextView, fill: Int, stroke: Int, textColor: Int) {
+        button.background = createPillDrawable(fill, stroke)
+        button.setTextColor(textColor)
     }
 
     private fun makeButton(label: String): TextView {

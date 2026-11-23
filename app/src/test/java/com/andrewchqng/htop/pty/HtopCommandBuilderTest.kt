@@ -72,6 +72,71 @@ class HtopCommandBuilderTest {
     }
 
     @Test
+    fun testBuildCommandHtopModeStillFallsBackToTopEvenWithBundledPath() {
+        val cmd = HtopCommandBuilder.buildCommand(
+            configDir = "/data/data/pkg/files/config",
+            homeDir = "/data/data/pkg/files",
+            asRoot = false,
+            mode = MonitorMode.HTOP,
+            bundledHtopPath = "/data/app/pkg/lib/arm64/libhtop_bundled.so",
+        )
+        assertFalse(cmd.contains("libhtop_bundled.so"))
+        assertTrue(cmd.contains("exec \"\$HTOP\""))
+        assertTrue(cmd.contains("exec \"\$TOP\" -d 1"))
+    }
+
+    @Test
+    fun testBuildCommandBundledHtopModeRunsBundledWithTmpFallback() {
+        val bundledPath = "/data/app/com.andrewchqng.htop/lib/arm64/libhtop_bundled.so"
+        val nonRoot = HtopCommandBuilder.buildCommand(
+            configDir = "/data/data/pkg/files/config",
+            homeDir = "/data/data/pkg/files",
+            asRoot = false,
+            extraArgs = listOf("-d", "5"),
+            mode = MonitorMode.BUNDLED_HTOP,
+            bundledHtopPath = bundledPath,
+        )
+        assertFalse(nonRoot.contains("/system_ext/bin/htop"))
+        assertTrue(nonRoot.contains("BUNDLED='$bundledPath'"))
+        assertTrue(nonRoot.contains("/data/local/tmp/.android-htop-bundled"))
+        assertTrue(nonRoot.contains("exec \"\$BUNDLED\" '-d' '5'"))
+        assertTrue(nonRoot.contains("exec \"\$TMP_HTOP\" '-d' '5'"))
+        assertFalse(nonRoot.contains("su -i -c"))
+
+        val root = HtopCommandBuilder.buildCommand(
+            configDir = "/data/data/pkg/files/config",
+            homeDir = "/data/data/pkg/files",
+            asRoot = true,
+            mode = MonitorMode.BUNDLED_HTOP,
+            bundledHtopPath = bundledPath,
+        )
+        assertTrue(root.contains("libhtop_bundled.so"))
+        assertTrue(root.contains("exec \"\$SU\" -i -c \"\$CMD\""))
+    }
+
+    @Test
+    fun testBuildCommandBundledHtopModeMissingPathExits127() {
+        val cmdNull = HtopCommandBuilder.buildCommand(
+            configDir = "/data/data/pkg/files/config",
+            homeDir = "/data/data/pkg/files",
+            asRoot = false,
+            mode = MonitorMode.BUNDLED_HTOP,
+            bundledHtopPath = null,
+        )
+        assertTrue(cmdNull.contains("exit 127"))
+        assertFalse(cmdNull.contains("exec \"\$BUNDLED\""))
+
+        val cmdBlank = HtopCommandBuilder.buildCommand(
+            configDir = "/data/data/pkg/files/config",
+            homeDir = "/data/data/pkg/files",
+            asRoot = false,
+            mode = MonitorMode.BUNDLED_HTOP,
+            bundledHtopPath = "  ",
+        )
+        assertTrue(cmdBlank.contains("exit 127"))
+    }
+
+    @Test
     fun testBuildEnvironmentSetsExpectedVars() {
         val env = HtopCommandBuilder.buildEnvironment("/tmp/home", "/tmp/cfg")
         val map = env.associate { entry ->

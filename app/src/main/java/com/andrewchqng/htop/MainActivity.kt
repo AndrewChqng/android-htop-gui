@@ -13,6 +13,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.view.ViewCompat
@@ -39,7 +40,6 @@ class MainActivity : Activity() {
     private lateinit var rootLayout: LinearLayout
     private lateinit var exitBanner: LinearLayout
     private lateinit var exitStatusText: TextView
-    private lateinit var switchModeBannerButton: Button
     private lateinit var terminalView: TerminalView
     private lateinit var extraKeysBar: ExtraKeysBar
 
@@ -92,9 +92,18 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val defaultFontSp = if (resources.configuration.smallestScreenWidthDp >= 600) 12f else 10.5f
         val savedFontSp = prefs.getFloat(KEY_FONT_SP, defaultFontSp)
-        monitorMode = runCatching {
+        val bundledAvailable = resolveBundledHtopPath() != null
+        val savedMode = runCatching {
             MonitorMode.valueOf(prefs.getString(KEY_MONITOR_MODE, MonitorMode.HTOP.name).orEmpty())
         }.getOrDefault(MonitorMode.HTOP)
+        val requestedMode = parseRequestedMode(intent)
+        monitorMode = (requestedMode ?: savedMode).let { candidate ->
+            if (candidate == MonitorMode.BUNDLED_HTOP && !bundledAvailable) {
+                MonitorMode.HTOP
+            } else {
+                candidate
+            }
+        }
 
         rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -102,8 +111,7 @@ class MainActivity : Activity() {
         }
 
         exitBanner = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xFF21262D.toInt())
             setPadding(dp(10), dp(6), dp(10), dp(6))
             visibility = View.GONE
@@ -113,26 +121,52 @@ class MainActivity : Activity() {
             setTextColor(0xFFE6EDF3.toInt())
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             typeface = Typeface.MONOSPACE
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            setPadding(0, 0, 0, dp(6))
         }
-        exitBanner.addView(exitStatusText)
+        exitBanner.addView(
+            exitStatusText,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+        )
 
-        exitBanner.addView(makeBannerButton(getString(R.string.btn_restart_root)) {
+        val bannerActionsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_restart_root)) {
             startSession(ExecutionBackend.ROOT, resetAutoFallback = false)
         })
-        exitBanner.addView(makeBannerButton(getString(R.string.btn_use_shizuku)) {
+        bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_use_shizuku)) {
             startSession(ExecutionBackend.SHIZUKU, resetAutoFallback = false)
         })
-        exitBanner.addView(makeBannerButton(getString(R.string.btn_run_non_root)) {
+        bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_run_non_root)) {
             startSession(ExecutionBackend.NON_ROOT, resetAutoFallback = false)
         })
-        switchModeBannerButton = makeBannerButton(bannerSwitchLabel(monitorMode)) {
-            toggleMonitorMode(prefs)
+        bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_system_htop)) {
+            selectMonitorMode(prefs, MonitorMode.HTOP)
+        })
+        if (bundledAvailable) {
+            bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_bundled_htop)) {
+                selectMonitorMode(prefs, MonitorMode.BUNDLED_HTOP)
+            })
         }
-        exitBanner.addView(switchModeBannerButton)
-        exitBanner.addView(makeBannerButton(getString(R.string.btn_close)) {
+        bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_use_top)) {
+            selectMonitorMode(prefs, MonitorMode.TOP)
+        })
+        bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_close)) {
             finish()
         })
+        val bannerScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(
+                bannerActionsRow,
+                ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+            )
+        }
+        exitBanner.addView(
+            bannerScroll,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+        )
 
         terminalView = TerminalView(this).apply {
             fontSizeSp = savedFontSp
@@ -140,7 +174,7 @@ class MainActivity : Activity() {
         }
 
         extraKeysBar = ExtraKeysBar(this).apply {
-            setMonitorMode(monitorMode)
+            setMonitorMode(monitorMode, bundledAvailable)
             setBackend(activeBackend)
         }
         terminalView.modifierDelegate = extraKeysBar
@@ -182,9 +216,24 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val requested = parseRequestedBackend(intent)
-        if (requested != null && hasStartedOnce) {
-            startSession(requested, resetAutoFallback = true)
+        val requestedBackend = parseRequestedBackend(intent)
+        val requestedMode = parseRequestedMode(intent)
+        if ((requestedBackend != null || requestedMode != null) && hasStartedOnce) {
+            if (requestedMode != null) {
+                val bundledPath = resolveBundledHtopPath()
+                val effectiveMode = if (requestedMode == MonitorMode.BUNDLED_HTOP && bundledPath == null) {
+                    MonitorMode.HTOP
+                } else {
+                    requestedMode
+                }
+                monitorMode = effectiveMode
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_MONITOR_MODE, effectiveMode.name)
+                    .apply()
+                extraKeysBar.setMonitorMode(effectiveMode, bundledPath != null)
+            }
+            startSession(requestedBackend ?: activeBackend, resetAutoFallback = true)
         }
     }
 
@@ -257,8 +306,8 @@ class MainActivity : Activity() {
             startSession(activeBackend, resetAutoFallback = false)
         }
 
-        extraKeysBar.onToggleMonitorMode = {
-            toggleMonitorMode(prefs)
+        extraKeysBar.onSelectMonitorMode = { selected ->
+            selectMonitorMode(prefs, selected)
         }
 
         extraKeysBar.onToggleBackend = {
@@ -275,6 +324,20 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun parseRequestedMode(intent: Intent?): MonitorMode? {
+        return when (intent?.getStringExtra(EXTRA_MODE)?.lowercase()) {
+            "htop", "system" -> MonitorMode.HTOP
+            "bundled", "bundled_htop", "arter97" -> MonitorMode.BUNDLED_HTOP
+            "top" -> MonitorMode.TOP
+            else -> null
+        }
+    }
+
+    private fun resolveBundledHtopPath(): String? =
+        File(applicationInfo.nativeLibraryDir, BUNDLED_HTOP_LIB_NAME)
+            .takeIf { it.exists() }
+            ?.absolutePath
+
     private fun toggleBackend() {
         val next = BackendSelector.nextBackend(
             current = activeBackend,
@@ -284,16 +347,18 @@ class MainActivity : Activity() {
         startSession(next, resetAutoFallback = true)
     }
 
-    private fun toggleMonitorMode(prefs: android.content.SharedPreferences) {
-        monitorMode = if (monitorMode == MonitorMode.HTOP) MonitorMode.TOP else MonitorMode.HTOP
-        prefs.edit().putString(KEY_MONITOR_MODE, monitorMode.name).apply()
-        extraKeysBar.setMonitorMode(monitorMode)
-        switchModeBannerButton.text = bannerSwitchLabel(monitorMode)
+    private fun selectMonitorMode(prefs: android.content.SharedPreferences, mode: MonitorMode) {
+        val bundledPath = resolveBundledHtopPath()
+        val effective = if (mode == MonitorMode.BUNDLED_HTOP && bundledPath == null) {
+            MonitorMode.HTOP
+        } else {
+            mode
+        }
+        monitorMode = effective
+        prefs.edit().putString(KEY_MONITOR_MODE, effective.name).apply()
+        extraKeysBar.setMonitorMode(effective, bundledPath != null)
         startSession(activeBackend, resetAutoFallback = false)
     }
-
-    private fun bannerSwitchLabel(mode: MonitorMode): String =
-        if (mode == MonitorMode.HTOP) "Switch to top" else "Switch to htop"
 
     private fun startSession(backend: ExecutionBackend, resetAutoFallback: Boolean = false) {
         session?.close()
@@ -350,6 +415,7 @@ class MainActivity : Activity() {
             homeDir = homeDir,
             asRoot = (backend == ExecutionBackend.ROOT),
             mode = activeMode,
+            bundledHtopPath = resolveBundledHtopPath(),
         )
         val envp = HtopCommandBuilder.buildEnvironment(homeDir = homeDir, configDir = configDir)
         val startTimeMs = SystemClock.elapsedRealtime()
@@ -440,7 +506,7 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 dp(32),
             ).apply {
-                marginStart = dp(6)
+                marginEnd = dp(6)
             }
             setOnClickListener { onClick() }
         }
@@ -457,6 +523,8 @@ class MainActivity : Activity() {
         private const val KEY_FONT_SP = "font_sp"
         private const val KEY_MONITOR_MODE = "monitor_mode"
         private const val EXTRA_BACKEND = "backend"
+        private const val EXTRA_MODE = "mode"
+        private const val BUNDLED_HTOP_LIB_NAME = "libhtop_bundled.so"
         private const val SHIZUKU_REQ_CODE = 4201
     }
 }
