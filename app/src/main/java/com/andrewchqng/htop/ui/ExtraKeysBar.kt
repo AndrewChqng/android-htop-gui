@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.andrewchqng.htop.pty.ExecutionBackend
 import com.andrewchqng.htop.pty.MonitorMode
 
 class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalView.ModifierDelegate {
@@ -21,10 +22,12 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
     var onZoomDelta: ((Float) -> Unit)? = null
     var onRestartRequested: (() -> Unit)? = null
     var onToggleMonitorMode: (() -> Unit)? = null
+    var onToggleBackend: (() -> Unit)? = null
 
     private var ctrlSticky = false
     private lateinit var ctrlButton: TextView
     private lateinit var modeButton: TextView
+    private lateinit var backendButton: TextView
 
     private val row = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -90,10 +93,29 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
         addActionButton("A+") { onZoomDelta?.invoke(+1f) }
         addActionButton("↻") { onRestartRequested?.invoke() }
         modeButton = addActionButton("⇄top") { onToggleMonitorMode?.invoke() }
+        backendButton = addActionButton(ExecutionBackend.ROOT.badge) { onToggleBackend?.invoke() }
     }
 
     fun setMonitorMode(mode: MonitorMode) {
         modeButton.text = if (mode == MonitorMode.HTOP) "⇄top" else "⇄htop"
+    }
+
+    fun setBackend(backend: ExecutionBackend) {
+        backendButton.text = backend.badge
+        when (backend) {
+            ExecutionBackend.ROOT -> {
+                backendButton.background = createPillDrawable(0xFF21262D.toInt(), 0xFF30363D.toInt())
+                backendButton.setTextColor(0xFFE6EDF3.toInt())
+            }
+            ExecutionBackend.SHIZUKU -> {
+                backendButton.background = createPillDrawable(0xFF132F38.toInt(), 0xFF22D3EE.toInt())
+                backendButton.setTextColor(0xFF67E8F9.toInt())
+            }
+            ExecutionBackend.NON_ROOT -> {
+                backendButton.background = createPillDrawable(0xFF2B2313.toInt(), 0xFFD29922.toInt())
+                backendButton.setTextColor(0xFFFACC15.toInt())
+            }
+        }
     }
 
     private fun makeButton(label: String): TextView {

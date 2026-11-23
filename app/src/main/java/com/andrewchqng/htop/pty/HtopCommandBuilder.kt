@@ -1,5 +1,7 @@
 package com.andrewchqng.htop.pty
 
+import java.io.File
+
 enum class MonitorMode(val label: String) {
     HTOP("htop"),
     TOP("top"),
@@ -9,6 +11,33 @@ object HtopCommandBuilder {
 
     private const val EXTENDED_PATH =
         "/product/bin:/debug_ramdisk:/system_ext/bin:/system/bin:/system/xbin:/sbin:/su/bin:/vendor/bin"
+
+    private val SU_PATHS = arrayOf(
+        "/product/bin/su",
+        "/debug_ramdisk/su",
+        "/system/bin/su",
+        "/system/xbin/su",
+        "/sbin/su",
+        "/su/bin/su",
+    )
+
+    fun hasSuBinary(): Boolean {
+        for (path in SU_PATHS) {
+            val f = File(path)
+            if (f.exists() && f.canExecute()) {
+                return true
+            }
+        }
+        val pathEnv = System.getenv("PATH").orEmpty()
+        for (dir in pathEnv.split(':')) {
+            if (dir.isBlank()) continue
+            val f = File(dir, "su")
+            if (f.exists() && f.canExecute()) {
+                return true
+            }
+        }
+        return false
+    }
 
     fun shellQuoteSingle(arg: String): String {
         val sb = StringBuilder(arg.length + 8)

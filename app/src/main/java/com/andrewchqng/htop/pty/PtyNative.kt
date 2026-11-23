@@ -1,8 +1,43 @@
 package com.andrewchqng.htop.pty
 
+import java.io.File
+
 object PtyNative {
+    @Volatile
+    private var loaded = false
+
     init {
-        System.loadLibrary("htoppty")
+        tryLoad(null)
+    }
+
+    @Synchronized
+    fun ensureLoaded(nativeLibDir: String? = null): Boolean {
+        if (loaded) {
+            return true
+        }
+        return tryLoad(nativeLibDir)
+    }
+
+    private fun tryLoad(nativeLibDir: String?): Boolean {
+        try {
+            System.loadLibrary("htoppty")
+            loaded = true
+            return true
+        } catch (_: UnsatisfiedLinkError) {
+            if (!nativeLibDir.isNullOrBlank()) {
+                val soFile = File(nativeLibDir, "libhtoppty.so")
+                if (soFile.exists()) {
+                    try {
+                        System.load(soFile.absolutePath)
+                        loaded = true
+                        return true
+                    } catch (_: UnsatisfiedLinkError) {
+                        // Ignore
+                    }
+                }
+            }
+        }
+        return false
     }
 
     @JvmStatic

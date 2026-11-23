@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">htop</string>
     <string name="btn_restart_root">Restart (Root)</string>
+    <string name="btn_use_shizuku">Use Shizuku</string>
     <string name="btn_run_non_root">Run Non-Root</string>
     <string name="btn_close">Close</string>
 </resources>

@@ -1,1 +1,8 @@
 -keep class com.andrewchqng.htop.pty.PtyNative { *; }
+-keep class com.andrewchqng.htop.shizuku.ShizukuPtyService { *; }
+-keep class com.andrewchqng.htop.shizuku.IShizukuPtyService { *; }
+-keep class com.andrewchqng.htop.shizuku.IShizukuPtyService$** { *; }
+-keep class com.andrewchqng.htop.shizuku.IShizukuPtyCallback { *; }
+-keep class com.andrewchqng.htop.shizuku.IShizukuPtyCallback$** { *; }
+-keep class rikka.shizuku.** { *; }
+-keep class moe.shizuku.** { *; }

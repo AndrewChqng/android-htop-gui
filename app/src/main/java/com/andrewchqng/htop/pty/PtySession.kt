@@ -10,7 +10,7 @@ class PtySession(
     private val envp: Array<String>?,
     private val onOutput: (ByteArray, Int) -> Unit,
     private val onExit: (Int) -> Unit,
-) {
+) : TerminalSession {
     private val masterFd = AtomicInteger(-1)
     private val childPid = AtomicInteger(-1)
     private val closed = AtomicBoolean(false)
@@ -23,7 +23,7 @@ class PtySession(
     @Volatile
     private var readerThread: Thread? = null
 
-    fun start(rows: Int, cols: Int, xpixel: Int, ypixel: Int): Boolean {
+    override fun start(rows: Int, cols: Int, xpixel: Int, ypixel: Int): Boolean {
         val ids = PtyNative.openPty(command, envp, rows, cols, xpixel, ypixel) ?: return false
         if (ids.size < 2 || ids[0] < 0 || ids[1] <= 0) {
             if (ids.isNotEmpty() && ids[0] >= 0) {
@@ -83,7 +83,7 @@ class PtySession(
         return true
     }
 
-    fun write(bytes: ByteArray) {
+    override fun write(bytes: ByteArray) {
         if (closed.get() || bytes.isEmpty()) {
             return
         }
@@ -104,7 +104,7 @@ class PtySession(
         }
     }
 
-    fun resize(rows: Int, cols: Int, xpixel: Int, ypixel: Int) {
+    override fun resize(rows: Int, cols: Int, xpixel: Int, ypixel: Int) {
         if (closed.get() || rows <= 0 || cols <= 0) {
             return
         }
@@ -116,9 +116,9 @@ class PtySession(
         }
     }
 
-    fun isRunning(): Boolean = !closed.get() && !exitReported.get() && childPid.get() > 0
+    override fun isRunning(): Boolean = !closed.get() && !exitReported.get() && childPid.get() > 0
 
-    fun close() {
+    override fun close() {
         if (!closed.compareAndSet(false, true)) {
             return
         }

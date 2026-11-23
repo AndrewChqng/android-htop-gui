@@ -2,11 +2,13 @@ package com.andrewchqng.htop
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
-import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
@@ -17,13 +19,19 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.andrewchqng.htop.pty.BackendSelector
+import com.andrewchqng.htop.pty.ExecutionBackend
 import com.andrewchqng.htop.pty.HtopCommandBuilder
 import com.andrewchqng.htop.pty.MonitorMode
 import com.andrewchqng.htop.pty.PtySession
+import com.andrewchqng.htop.pty.TerminalSession
+import com.andrewchqng.htop.shizuku.ShizukuHelper
+import com.andrewchqng.htop.shizuku.ShizukuPtySession
 import com.andrewchqng.htop.terminal.TerminalEmulator
 import com.andrewchqng.htop.ui.ExtraKeysBar
 import com.andrewchqng.htop.ui.InputEncoder
 import com.andrewchqng.htop.ui.TerminalView
+import rikka.shizuku.Shizuku
 import java.io.File
 
 class MainActivity : Activity() {
@@ -36,14 +44,37 @@ class MainActivity : Activity() {
     private lateinit var extraKeysBar: ExtraKeysBar
 
     private var emulator: TerminalEmulator? = null
-    private var session: PtySession? = null
+    private var session: TerminalSession? = null
     private var monitorMode = MonitorMode.HTOP
-    private var lastStartedAsRoot = true
+    private var activeBackend = ExecutionBackend.ROOT
+    private var pendingShizukuStart = false
+    private var autoFallbackAttempted = false
     private var hasStartedOnce = false
     private var lastCols = 0
     private var lastRows = 0
     private var lastWidthPx = 0
     private var lastHeightPx = 0
+
+    private val shizukuPermissionListener =
+        Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+            if (requestCode == SHIZUKU_REQ_CODE) {
+                runOnUiThread {
+                    if (!isDestroyed && !isFinishing && pendingShizukuStart) {
+                        pendingShizukuStart = false
+                        if (grantResult == PackageManager.PERMISSION_GRANTED) {
+                            startSession(ExecutionBackend.SHIZUKU)
+                        } else {
+                            appendTerminalNotice("Shizuku permission denied.\r\n")
+                            showExitBanner("${monitorMode.label} (shizuku) denied")
+                        }
+                    }
+                }
+            }
+        }
+
+    private val shizukuBinderListener = Shizuku.OnBinderReceivedListener {
+        // Binder became available while activity is alive
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,10 +118,13 @@ class MainActivity : Activity() {
         exitBanner.addView(exitStatusText)
 
         exitBanner.addView(makeBannerButton(getString(R.string.btn_restart_root)) {
-            startHtopSession(asRoot = true)
+            startSession(ExecutionBackend.ROOT, resetAutoFallback = false)
+        })
+        exitBanner.addView(makeBannerButton(getString(R.string.btn_use_shizuku)) {
+            startSession(ExecutionBackend.SHIZUKU, resetAutoFallback = false)
         })
         exitBanner.addView(makeBannerButton(getString(R.string.btn_run_non_root)) {
-            startHtopSession(asRoot = false)
+            startSession(ExecutionBackend.NON_ROOT, resetAutoFallback = false)
         })
         switchModeBannerButton = makeBannerButton(bannerSwitchLabel(monitorMode)) {
             toggleMonitorMode(prefs)
@@ -107,6 +141,7 @@ class MainActivity : Activity() {
 
         extraKeysBar = ExtraKeysBar(this).apply {
             setMonitorMode(monitorMode)
+            setBackend(activeBackend)
         }
         terminalView.modifierDelegate = extraKeysBar
 
@@ -135,8 +170,22 @@ class MainActivity : Activity() {
             windowInsets
         }
 
+        runCatching {
+            Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+            Shizuku.addBinderReceivedListener(shizukuBinderListener)
+        }
+
         wireCallbacks(prefs)
         terminalView.requestFocus()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val requested = parseRequestedBackend(intent)
+        if (requested != null && hasStartedOnce) {
+            startSession(requested, resetAutoFallback = true)
+        }
     }
 
     private fun wireCallbacks(prefs: android.content.SharedPreferences) {
@@ -155,7 +204,12 @@ class MainActivity : Activity() {
             lastHeightPx = heightPx
             if (!hasStartedOnce) {
                 hasStartedOnce = true
-                startHtopSession(asRoot = true)
+                val initial = BackendSelector.selectInitialBackend(
+                    preferred = parseRequestedBackend(intent),
+                    hasSuBinary = HtopCommandBuilder.hasSuBinary(),
+                    shizukuRunning = ShizukuHelper.isRunning(),
+                )
+                startSession(initial, resetAutoFallback = true)
             } else {
                 session?.resize(rows, cols, widthPx, heightPx)
             }
@@ -200,12 +254,34 @@ class MainActivity : Activity() {
         }
 
         extraKeysBar.onRestartRequested = {
-            startHtopSession(asRoot = lastStartedAsRoot)
+            startSession(activeBackend, resetAutoFallback = false)
         }
 
         extraKeysBar.onToggleMonitorMode = {
             toggleMonitorMode(prefs)
         }
+
+        extraKeysBar.onToggleBackend = {
+            toggleBackend()
+        }
+    }
+
+    private fun parseRequestedBackend(intent: Intent?): ExecutionBackend? {
+        return when (intent?.getStringExtra(EXTRA_BACKEND)?.lowercase()) {
+            "root" -> ExecutionBackend.ROOT
+            "shizuku", "shz" -> ExecutionBackend.SHIZUKU
+            "non_root", "non-root", "user" -> ExecutionBackend.NON_ROOT
+            else -> null
+        }
+    }
+
+    private fun toggleBackend() {
+        val next = BackendSelector.nextBackend(
+            current = activeBackend,
+            hasSuBinary = HtopCommandBuilder.hasSuBinary(),
+            shizukuRunning = ShizukuHelper.isRunning(),
+        )
+        startSession(next, resetAutoFallback = true)
     }
 
     private fun toggleMonitorMode(prefs: android.content.SharedPreferences) {
@@ -213,16 +289,21 @@ class MainActivity : Activity() {
         prefs.edit().putString(KEY_MONITOR_MODE, monitorMode.name).apply()
         extraKeysBar.setMonitorMode(monitorMode)
         switchModeBannerButton.text = bannerSwitchLabel(monitorMode)
-        startHtopSession(asRoot = lastStartedAsRoot)
+        startSession(activeBackend, resetAutoFallback = false)
     }
 
     private fun bannerSwitchLabel(mode: MonitorMode): String =
         if (mode == MonitorMode.HTOP) "Switch to top" else "Switch to htop"
 
-    private fun startHtopSession(asRoot: Boolean) {
+    private fun startSession(backend: ExecutionBackend, resetAutoFallback: Boolean = false) {
         session?.close()
         session = null
-        lastStartedAsRoot = asRoot
+        pendingShizukuStart = false
+        if (resetAutoFallback) {
+            autoFallbackAttempted = false
+        }
+        activeBackend = backend
+        extraKeysBar.setBackend(backend)
         val activeMode = monitorMode
 
         val rows = lastRows.coerceAtLeast(1)
@@ -237,49 +318,113 @@ class MainActivity : Activity() {
         terminalView.emulator = newEmulator
         exitBanner.visibility = View.GONE
 
-        val configDir = File(filesDir, "config").apply { mkdirs() }.absolutePath
-        val homeDir = filesDir.absolutePath
+        if (backend == ExecutionBackend.SHIZUKU) {
+            if (!ShizukuHelper.isRunning()) {
+                appendTerminalNotice("Shizuku service is not running. Start Shizuku app first.\r\n")
+                showExitBanner("${activeMode.label} (shizuku) unavailable")
+                return
+            }
+            if (!ShizukuHelper.isPermissionGranted()) {
+                pendingShizukuStart = true
+                appendTerminalNotice("Requesting Shizuku permission...\r\n")
+                if (!ShizukuHelper.requestPermission(SHIZUKU_REQ_CODE)) {
+                    pendingShizukuStart = false
+                    showExitBanner("${activeMode.label} (shizuku) permission failed")
+                }
+                return
+            }
+        }
+
+        val configDir: String
+        val homeDir: String
+        if (backend == ExecutionBackend.SHIZUKU) {
+            configDir = "/data/local/tmp/.android-htop-config"
+            homeDir = "/data/local/tmp"
+        } else {
+            configDir = File(filesDir, "config").apply { mkdirs() }.absolutePath
+            homeDir = filesDir.absolutePath
+        }
+
         val command = HtopCommandBuilder.buildCommand(
             configDir = configDir,
             homeDir = homeDir,
-            asRoot = asRoot,
+            asRoot = (backend == ExecutionBackend.ROOT),
             mode = activeMode,
         )
         val envp = HtopCommandBuilder.buildEnvironment(homeDir = homeDir, configDir = configDir)
+        val startTimeMs = SystemClock.elapsedRealtime()
 
-        var createdSession: PtySession? = null
-        val newSession = PtySession(
-            command = command,
-            envp = envp,
-            onOutput = { buf, len ->
-                newEmulator.process(buf, len)
-                terminalView.notifyScreenUpdated()
-            },
-            onExit = { code ->
-                runOnUiThread {
-                    if (!isDestroyed && !isFinishing && session === createdSession) {
-                        val privilege = if (asRoot) "root" else "non-root"
-                        exitStatusText.text = "${activeMode.label} ($privilege) exited ($code)"
-                        exitBanner.visibility = View.VISIBLE
+        var createdSession: TerminalSession? = null
+        val onOutput: (ByteArray, Int) -> Unit = { buf, len ->
+            newEmulator.process(buf, len)
+            terminalView.notifyScreenUpdated()
+        }
+        val onExit: (Int) -> Unit = { code ->
+            runOnUiThread {
+                if (!isDestroyed && !isFinishing && session === createdSession) {
+                    val elapsed = SystemClock.elapsedRealtime() - startTimeMs
+                    if (BackendSelector.shouldAutoFallbackToShizuku(
+                            failedBackend = backend,
+                            exitCode = code,
+                            runtimeMs = elapsed,
+                            alreadyAttempted = autoFallbackAttempted,
+                            shizukuRunning = ShizukuHelper.isRunning(),
+                        )
+                    ) {
+                        autoFallbackAttempted = true
+                        startSession(ExecutionBackend.SHIZUKU)
+                    } else {
+                        showExitBanner("${activeMode.label} (${backend.label}) exited ($code)")
                     }
                 }
-            },
-        )
+            }
+        }
+
+        val newSession: TerminalSession = if (backend == ExecutionBackend.SHIZUKU) {
+            ShizukuPtySession(
+                context = this,
+                command = command,
+                envp = envp,
+                outputListener = onOutput,
+                exitListener = onExit,
+            )
+        } else {
+            PtySession(
+                command = command,
+                envp = envp,
+                onOutput = onOutput,
+                onExit = onExit,
+            )
+        }
         createdSession = newSession
         session = newSession
         if (!newSession.start(rows, cols, lastWidthPx, lastHeightPx)) {
-            val msg = "Failed to open PTY session.\r\n".toByteArray()
-            newEmulator.process(msg, msg.size)
-            terminalView.notifyScreenUpdated()
-            exitStatusText.text = "Failed to start PTY"
-            exitBanner.visibility = View.VISIBLE
+            appendTerminalNotice("Failed to open ${backend.label} PTY session.\r\n")
+            showExitBanner("Failed to start ${backend.label} PTY")
         }
         terminalView.requestFocus()
     }
 
+    private fun appendTerminalNotice(text: String) {
+        val emu = emulator ?: return
+        val bytes = text.toByteArray()
+        emu.process(bytes, bytes.size)
+        terminalView.notifyScreenUpdated()
+    }
+
+    private fun showExitBanner(status: String) {
+        exitStatusText.text = status
+        exitBanner.visibility = View.VISIBLE
+    }
+
     override fun onDestroy() {
+        runCatching {
+            Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
+            Shizuku.removeBinderReceivedListener(shizukuBinderListener)
+        }
         session?.close()
         session = null
+        ShizukuPtySession.release(this)
         super.onDestroy()
     }
 
@@ -311,5 +456,7 @@ class MainActivity : Activity() {
         private const val PREFS_NAME = "htop_prefs"
         private const val KEY_FONT_SP = "font_sp"
         private const val KEY_MONITOR_MODE = "monitor_mode"
+        private const val EXTRA_BACKEND = "backend"
+        private const val SHIZUKU_REQ_CODE = 4201
     }
 }
