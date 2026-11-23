@@ -141,7 +141,7 @@ ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/28.2.13676358 \
 
 Requirements: Android SDK (`compileSdk 36`, NDK `28.2.13676358`, CMake `3.22.1`), JDK 21, `adb`.
 
-Builds output per-ABI split APKs (`arm64-v8a`, `armeabi-v7a`, `x86_64`), a combined `universal` APK, and a single-variant `app-<buildType>.apks` archive under `app/build/outputs/apk/<buildType>/`:
+Builds output per-ABI split APKs (`arm64-v8a`, `armeabi-v7a`, `x86_64`) and a combined `universal` APK under `app/build/outputs/apk/<buildType>/`, plus a single-variant `app-<buildType>.apks` archive under `app/build/outputs/apks/<buildType>/` when signing is configured:
 
 ```bash
 git clone --recurse-submodules https://github.com/AndrewChqng/android-htop-gui.git

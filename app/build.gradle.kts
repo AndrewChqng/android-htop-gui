@@ -136,12 +136,16 @@ tasks.matching { it.name == "buildReleasePreBundle" }.configureEach {
     }
 }
 
+val hasReleaseSigning = android.signingConfigs.findByName("release") != null
+
 listOf("Debug" to "debug", "Release" to "release").forEach { (cap, lower) ->
+    val isSigningConfigured = (lower == "debug") || hasReleaseSigning
     val packageApks = tasks.register("package${cap}Apks") {
+        onlyIf { isSigningConfigured }
         dependsOn("makeApkFromBundleFor$cap")
         mustRunAfter("package$cap", "create${cap}ApkListingFileRedirect")
         val inputApks = layout.buildDirectory.file("intermediates/apks_from_bundle/$lower/makeApkFromBundleFor$cap/bundle.apks")
-        val outputApks = layout.buildDirectory.file("outputs/apk/$lower/app-$lower.apks")
+        val outputApks = layout.buildDirectory.file("outputs/apks/$lower/app-$lower.apks")
         inputs.file(inputApks)
         outputs.file(outputApks)
         doLast {
@@ -222,8 +226,10 @@ listOf("Debug" to "debug", "Release" to "release").forEach { (cap, lower) ->
             }
         }
     }
-    tasks.matching { it.name == "assemble$cap" }.configureEach {
-        finalizedBy(packageApks)
+    if (isSigningConfigured) {
+        tasks.matching { it.name == "assemble$cap" }.configureEach {
+            finalizedBy(packageApks)
+        }
     }
 }
 
