@@ -34,14 +34,16 @@ class HtopCommandBuilderTest {
     }
 
     @Test
-    fun testBuildCommandNonRootSkipsSu() {
+    fun testBuildCommandNonRootSkipsSuAndHasNoTopAutoFallback() {
         val cmd = HtopCommandBuilder.buildCommand(
             configDir = "/data/data/pkg/files/config",
             homeDir = "/data/data/pkg/files",
             asRoot = false,
         )
         assertTrue(cmd.contains("exec \"\$HTOP\""))
-        assertTrue(cmd.contains("exec \"\$TOP\" -d 1"))
+        assertTrue(cmd.contains("exit 127"))
+        assertTrue(cmd.contains("Error: system htop binary not found on device."))
+        assertFalse(cmd.contains("exec \"\$TOP\""))
         assertFalse(cmd.contains("su -i -c"))
     }
 
@@ -72,7 +74,7 @@ class HtopCommandBuilderTest {
     }
 
     @Test
-    fun testBuildCommandHtopModeStillFallsBackToTopEvenWithBundledPath() {
+    fun testBuildCommandHtopModeDoesNotAutoFallbackToBundledOrTop() {
         val cmd = HtopCommandBuilder.buildCommand(
             configDir = "/data/data/pkg/files/config",
             homeDir = "/data/data/pkg/files",
@@ -81,8 +83,9 @@ class HtopCommandBuilderTest {
             bundledHtopPath = "/data/app/pkg/lib/arm64/libhtop_bundled.so",
         )
         assertFalse(cmd.contains("libhtop_bundled.so"))
+        assertFalse(cmd.contains("exec \"\$TOP\""))
         assertTrue(cmd.contains("exec \"\$HTOP\""))
-        assertTrue(cmd.contains("exec \"\$TOP\" -d 1"))
+        assertTrue(cmd.contains("exit 127"))
     }
 
     @Test

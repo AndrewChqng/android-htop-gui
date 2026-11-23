@@ -23,10 +23,11 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
     var onZoomDelta: ((Float) -> Unit)? = null
     var onRestartRequested: (() -> Unit)? = null
     var onSelectMonitorMode: ((MonitorMode) -> Unit)? = null
-    var onToggleBackend: (() -> Unit)? = null
+    var onSelectBackend: ((ExecutionBackend) -> Unit)? = null
 
     private var ctrlSticky = false
     private var currentMode = MonitorMode.HTOP
+    private var currentBackend = ExecutionBackend.ROOT
     private var bundledAvailable = true
     private lateinit var ctrlButton: TextView
     private lateinit var modeButton: TextView
@@ -58,6 +59,9 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
     }
 
     private fun buildButtons() {
+        backendButton = addActionButton(ExecutionBackend.ROOT.badge) { showBackendMenu() }
+        modeButton = addActionButton(MonitorMode.HTOP.badge) { showMonitorModeMenu() }
+
         addActionButton("KB") { onToggleKeyboard?.invoke() }
         addBytesButton("ESC", byteArrayOf(0x1B))
         addBytesButton("TAB", byteArrayOf('\t'.code.toByte()))
@@ -95,8 +99,6 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
         addActionButton("A-") { onZoomDelta?.invoke(-1f) }
         addActionButton("A+") { onZoomDelta?.invoke(+1f) }
         addActionButton("↻") { onRestartRequested?.invoke() }
-        modeButton = addActionButton(MonitorMode.HTOP.badge) { showMonitorModeMenu() }
-        backendButton = addActionButton(ExecutionBackend.ROOT.badge) { onToggleBackend?.invoke() }
     }
 
     fun setMonitorMode(mode: MonitorMode, bundledHtopAvailable: Boolean = true) {
@@ -111,6 +113,7 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
     }
 
     fun setBackend(backend: ExecutionBackend) {
+        currentBackend = backend
         backendButton.text = backend.badge
         when (backend) {
             ExecutionBackend.ROOT -> applyBadgeStyle(backendButton, 0xFF21262D.toInt(), 0xFF30363D.toInt(), 0xFFE6EDF3.toInt())
@@ -119,23 +122,45 @@ class ExtraKeysBar(context: Context) : HorizontalScrollView(context), TerminalVi
         }
     }
 
+    private fun showBackendMenu() {
+        val options = listOf(
+            ExecutionBackend.ROOT to "Root (su)",
+            ExecutionBackend.SHIZUKU to "Shizuku",
+            ExecutionBackend.NON_ROOT to "Non-Root",
+        )
+        showOptionMenu(backendButton, options, currentBackend) { selected ->
+            onSelectBackend?.invoke(selected)
+        }
+    }
+
     private fun showMonitorModeMenu() {
-        val popup = PopupMenu(context, modeButton)
-        val items = buildList {
-            add(MonitorMode.HTOP to "System htop (auto → top)")
+        val options = buildList {
+            add(MonitorMode.HTOP to "System htop")
             if (bundledAvailable) {
                 add(MonitorMode.BUNDLED_HTOP to "Bundled htop (arter97)")
             }
             add(MonitorMode.TOP to "System top")
         }
-        items.forEachIndexed { index, (mode, label) ->
-            val title = if (mode == currentMode) "✓ $label" else label
+        showOptionMenu(modeButton, options, currentMode) { selected ->
+            onSelectMonitorMode?.invoke(selected)
+        }
+    }
+
+    private fun <T> showOptionMenu(
+        anchor: TextView,
+        options: List<Pair<T, String>>,
+        current: T,
+        onSelected: (T) -> Unit,
+    ) {
+        val popup = PopupMenu(context, anchor)
+        options.forEachIndexed { index, (option, label) ->
+            val title = if (option == current) "✓ $label" else label
             popup.menu.add(0, index, index, title)
         }
         popup.setOnMenuItemClickListener { item ->
-            val selected = items.getOrNull(item.itemId)?.first ?: return@setOnMenuItemClickListener false
-            if (selected != currentMode) {
-                onSelectMonitorMode?.invoke(selected)
+            val selected = options.getOrNull(item.itemId)?.first ?: return@setOnMenuItemClickListener false
+            if (selected != current) {
+                onSelected(selected)
             }
             true
         }

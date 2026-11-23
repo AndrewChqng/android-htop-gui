@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.os.Bundle
-import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -48,7 +47,6 @@ class MainActivity : Activity() {
     private var monitorMode = MonitorMode.HTOP
     private var activeBackend = ExecutionBackend.ROOT
     private var pendingShizukuStart = false
-    private var autoFallbackAttempted = false
     private var hasStartedOnce = false
     private var lastCols = 0
     private var lastRows = 0
@@ -104,6 +102,13 @@ class MainActivity : Activity() {
                 candidate
             }
         }
+        val savedBackend = runCatching {
+            ExecutionBackend.valueOf(prefs.getString(KEY_BACKEND, ExecutionBackend.ROOT.name).orEmpty())
+        }.getOrDefault(ExecutionBackend.ROOT)
+        activeBackend = BackendSelector.selectInitialBackend(
+            preferred = parseRequestedBackend(intent),
+            saved = savedBackend,
+        )
 
         rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -133,13 +138,13 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_restart_root)) {
-            startSession(ExecutionBackend.ROOT, resetAutoFallback = false)
+            selectBackend(prefs, ExecutionBackend.ROOT)
         })
         bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_use_shizuku)) {
-            startSession(ExecutionBackend.SHIZUKU, resetAutoFallback = false)
+            selectBackend(prefs, ExecutionBackend.SHIZUKU)
         })
         bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_run_non_root)) {
-            startSession(ExecutionBackend.NON_ROOT, resetAutoFallback = false)
+            selectBackend(prefs, ExecutionBackend.NON_ROOT)
         })
         bannerActionsRow.addView(makeBannerButton(getString(R.string.btn_system_htop)) {
             selectMonitorMode(prefs, MonitorMode.HTOP)
@@ -219,6 +224,8 @@ class MainActivity : Activity() {
         val requestedBackend = parseRequestedBackend(intent)
         val requestedMode = parseRequestedMode(intent)
         if ((requestedBackend != null || requestedMode != null) && hasStartedOnce) {
+            val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            val editor = prefs.edit()
             if (requestedMode != null) {
                 val bundledPath = resolveBundledHtopPath()
                 val effectiveMode = if (requestedMode == MonitorMode.BUNDLED_HTOP && bundledPath == null) {
@@ -227,13 +234,15 @@ class MainActivity : Activity() {
                     requestedMode
                 }
                 monitorMode = effectiveMode
-                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                    .edit()
-                    .putString(KEY_MONITOR_MODE, effectiveMode.name)
-                    .apply()
+                editor.putString(KEY_MONITOR_MODE, effectiveMode.name)
                 extraKeysBar.setMonitorMode(effectiveMode, bundledPath != null)
             }
-            startSession(requestedBackend ?: activeBackend, resetAutoFallback = true)
+            if (requestedBackend != null) {
+                activeBackend = requestedBackend
+                editor.putString(KEY_BACKEND, requestedBackend.name)
+            }
+            editor.apply()
+            startSession(requestedBackend ?: activeBackend)
         }
     }
 
@@ -253,12 +262,7 @@ class MainActivity : Activity() {
             lastHeightPx = heightPx
             if (!hasStartedOnce) {
                 hasStartedOnce = true
-                val initial = BackendSelector.selectInitialBackend(
-                    preferred = parseRequestedBackend(intent),
-                    hasSuBinary = HtopCommandBuilder.hasSuBinary(),
-                    shizukuRunning = ShizukuHelper.isRunning(),
-                )
-                startSession(initial, resetAutoFallback = true)
+                startSession(activeBackend)
             } else {
                 session?.resize(rows, cols, widthPx, heightPx)
             }
@@ -303,15 +307,15 @@ class MainActivity : Activity() {
         }
 
         extraKeysBar.onRestartRequested = {
-            startSession(activeBackend, resetAutoFallback = false)
+            startSession(activeBackend)
         }
 
         extraKeysBar.onSelectMonitorMode = { selected ->
             selectMonitorMode(prefs, selected)
         }
 
-        extraKeysBar.onToggleBackend = {
-            toggleBackend()
+        extraKeysBar.onSelectBackend = { selected ->
+            selectBackend(prefs, selected)
         }
     }
 
@@ -338,13 +342,10 @@ class MainActivity : Activity() {
             .takeIf { it.exists() }
             ?.absolutePath
 
-    private fun toggleBackend() {
-        val next = BackendSelector.nextBackend(
-            current = activeBackend,
-            hasSuBinary = HtopCommandBuilder.hasSuBinary(),
-            shizukuRunning = ShizukuHelper.isRunning(),
-        )
-        startSession(next, resetAutoFallback = true)
+    private fun selectBackend(prefs: android.content.SharedPreferences, backend: ExecutionBackend) {
+        activeBackend = backend
+        prefs.edit().putString(KEY_BACKEND, backend.name).apply()
+        startSession(backend)
     }
 
     private fun selectMonitorMode(prefs: android.content.SharedPreferences, mode: MonitorMode) {
@@ -357,16 +358,13 @@ class MainActivity : Activity() {
         monitorMode = effective
         prefs.edit().putString(KEY_MONITOR_MODE, effective.name).apply()
         extraKeysBar.setMonitorMode(effective, bundledPath != null)
-        startSession(activeBackend, resetAutoFallback = false)
+        startSession(activeBackend)
     }
 
-    private fun startSession(backend: ExecutionBackend, resetAutoFallback: Boolean = false) {
+    private fun startSession(backend: ExecutionBackend) {
         session?.close()
         session = null
         pendingShizukuStart = false
-        if (resetAutoFallback) {
-            autoFallbackAttempted = false
-        }
         activeBackend = backend
         extraKeysBar.setBackend(backend)
         val activeMode = monitorMode
@@ -418,7 +416,6 @@ class MainActivity : Activity() {
             bundledHtopPath = resolveBundledHtopPath(),
         )
         val envp = HtopCommandBuilder.buildEnvironment(homeDir = homeDir, configDir = configDir)
-        val startTimeMs = SystemClock.elapsedRealtime()
 
         var createdSession: TerminalSession? = null
         val onOutput: (ByteArray, Int) -> Unit = { buf, len ->
@@ -428,20 +425,7 @@ class MainActivity : Activity() {
         val onExit: (Int) -> Unit = { code ->
             runOnUiThread {
                 if (!isDestroyed && !isFinishing && session === createdSession) {
-                    val elapsed = SystemClock.elapsedRealtime() - startTimeMs
-                    if (BackendSelector.shouldAutoFallbackToShizuku(
-                            failedBackend = backend,
-                            exitCode = code,
-                            runtimeMs = elapsed,
-                            alreadyAttempted = autoFallbackAttempted,
-                            shizukuRunning = ShizukuHelper.isRunning(),
-                        )
-                    ) {
-                        autoFallbackAttempted = true
-                        startSession(ExecutionBackend.SHIZUKU)
-                    } else {
-                        showExitBanner("${activeMode.label} (${backend.label}) exited ($code)")
-                    }
+                    showExitBanner("${activeMode.label} (${backend.label}) exited ($code)")
                 }
             }
         }
@@ -522,6 +506,7 @@ class MainActivity : Activity() {
         private const val PREFS_NAME = "htop_prefs"
         private const val KEY_FONT_SP = "font_sp"
         private const val KEY_MONITOR_MODE = "monitor_mode"
+        private const val KEY_BACKEND = "execution_backend"
         private const val EXTRA_BACKEND = "backend"
         private const val EXTRA_MODE = "mode"
         private const val BUNDLED_HTOP_LIB_NAME = "libhtop_bundled.so"
