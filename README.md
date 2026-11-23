@@ -1,6 +1,14 @@
 # Android htop
 
-Lightweight native Android application that launches the device's local `htop` binary as `root` inside a native pseudo-terminal (PTY) and passes through touch, hardware mouse/scroll wheel, hardware keyboard, virtual keyboard (IME), and a compact extra-keys toolbar directly to the LineageOS `htop` TUI.
+Lightweight native Android application that launches the device's local `htop` binary as `root` inside a native pseudo-terminal (PTY) and passes through touch, hardware mouse/scroll wheel, hardware keyboard, virtual keyboard (IME), and a compact extra-keys toolbar directly to the `htop` TUI.
+
+## Requirements
+
+> [!IMPORTANT]
+> **This app requires BOTH root access and a ROM/environment that already has `htop` installed.** It does **not** bundle its own `htop` binary — it wraps the device's native `htop` and `terminfo` files.
+
+- **Root Access (`su`)**: Required (MagiskSU, KernelSU, or ROM-integrated `su`) to view all system/app processes and send signals or adjust priority (`F7`/`F8`/`F9`). Uses `stty raw -echo` + `su -i -c` on MagiskSU for live `SIGWINCH` resize propagation (with automatic fallback to `su -c`). A "Run Non-Root" fallback button is shown if `su` is denied, though Android's `/proc` restrictions limit non-root process visibility.
+- **LineageOS or Custom ROM with `htop` Built In**: Built for LineageOS (which ships `/system_ext/bin/htop` and `/system_ext/etc/terminfo`) and other custom ROMs/devices with `htop` preinstalled. Also checks `/system/bin/htop`, `/system/xbin/htop`, `/data/local/tmp/htop`, and Termux's `htop` as fallbacks.
 
 ## Architecture & Features
 
