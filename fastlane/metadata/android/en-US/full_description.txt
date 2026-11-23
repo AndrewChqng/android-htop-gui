@@ -1,0 +1,19 @@
+android-htop-gui is a native Android terminal interface for htop and top.
+
+It includes root, Shizuku, and non-root execution modes, a bundled htop option,
+touchscreen and hardware mouse support, hardware and virtual keyboard controls,
+and an xterm-compatible terminal renderer.
+
+Features:
+
+* System htop, bundled htop, or Android top
+* Root access through su
+* Privileged Shizuku access without root
+* Unprivileged non-root execution
+* Touch process selection and scrolling
+* Mouse, trackpad, and hardware keyboard support
+* Resizable terminal with 16/256/true-color display
+* Adjustable fonts and extra function keys
+
+The app does not use tracking or advertising. Internet access is not required
+for normal operation.

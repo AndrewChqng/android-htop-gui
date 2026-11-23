@@ -1,0 +1,4 @@
+Added ABI split APKs and a universal APK.
+
+Added bundled htop support, leading backend and monitor mode pickers, and
+Obtainium package metadata. Improved terminal rendering and touch controls.
