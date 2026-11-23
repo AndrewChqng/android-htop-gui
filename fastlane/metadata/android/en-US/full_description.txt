@@ -17,3 +17,12 @@ Features:
 
 The app does not use tracking or advertising. Internet access is not required
 for normal operation.
+
+Privileged behavior:
+
+* USER runs with the app's normal Android sandbox permissions and has no special
+  process visibility.
+* SHZ requests optional permission from the separately installed Shizuku app
+  and runs in its authorized shell/root service.
+* ROOT runs the monitor through an authorized su implementation and may have
+  permission to inspect or control other processes.

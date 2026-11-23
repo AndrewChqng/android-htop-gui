@@ -63,6 +63,28 @@ Download the latest v2/v3-signed package from [**GitHub Releases**](https://gith
 
 ## Execution Backends & Monitor Modes
 
+### Privilege and Permission Behavior
+
+The app requests no Android permissions for normal operation. The only declared
+permission is the Shizuku API permission, used only when the **SHZ** backend is
+selected.
+
+| Backend | What it provides | Important behavior |
+| :--- | :--- | :--- |
+| **ROOT** | Runs the monitor through `su -i -c` or `su -c` | Requires a separately installed and authorized root solution. The elevated shell can view and may control all processes visible to that root implementation. |
+| **SHZ** | Runs the PTY inside a Shizuku `UserService` | Requires the Shizuku app and user approval. Depending on the setup, the service runs with Shizuku's shell UID and process visibility or as root. Shizuku is optional and never needed for **USER** mode. |
+| **USER** | Runs the PTY with the app's normal Android UID | Uses only Android app sandbox permissions. Process and system information are limited by `/proc`, SELinux, and Android's process-visibility rules. |
+
+`ROOT` mode can expose process details and enable privileged actions such as
+renicing or signaling processes. `SHZ` mode grants only the access authorized by
+the running Shizuku service and is independent of root on supported setups.
+`USER` mode is recommended for unprivileged monitoring.
+
+The app does not contain an `INTERNET` permission, does not download executable
+updates at runtime, and does not send process or terminal data to any service.
+Selecting root or Shizuku mode only changes where the local shell and bundled or
+system monitor binary run.
+
 Select both the **execution backend** (`ROOT` / `SHZ` / `USER`) and **monitor binary** (`HTOP` / `BND` / `TOP`) manually via the two leading pills at the far left of the extra-keys toolbar or from the session exit banner. Your choices persist across launches (no unexpected silent fallbacks).
 
 | Toolbar Pill | Options | Description |
