@@ -140,6 +140,8 @@ JAVA_HOME=/home/roboy/.jdks/jdk-21 ./gradlew testDebugUnitTest assembleRelease
 
 ## Credits & License Notices
 
+The original source code in this repository is licensed under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`). See [`LICENSE`](LICENSE).
+
 See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for full open-source attributions ([`arter97/android-htop`](https://github.com/arter97/android-htop), [`htop-dev/htop`](https://github.com/htop-dev/htop) `GPL-2.0-only`, GNU `ncurses`, and [`Shizuku`](https://github.com/RikkaApps/Shizuku-API) `Apache-2.0`).
 
 ---

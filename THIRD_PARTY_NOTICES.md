@@ -2,6 +2,11 @@
 
 This project includes or adapts third-party open-source components:
 
+## android-htop-gui
+- **License**: GNU General Public License v3.0 or later (`GPL-3.0-or-later`)
+- **Component**: Original application source code
+- **Copyright**: Andrew Chang and contributors
+
 ## arter97/android-htop
 - **Repository**: <https://github.com/arter97/android-htop>
 - **Component**: Git submodule at `third_party/android-htop`, invoked via [`scripts/build-bundled-htop.sh`](scripts/build-bundled-htop.sh)
