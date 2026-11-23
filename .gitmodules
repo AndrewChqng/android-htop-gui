@@ -1,0 +1,3 @@
+[submodule "third_party/android-htop"]
+	path = third_party/android-htop
+	url = https://github.com/arter97/android-htop.git

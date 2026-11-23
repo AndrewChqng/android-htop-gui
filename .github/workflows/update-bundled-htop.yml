@@ -1,0 +1,121 @@
+name: Update Bundled htop (arter97/android-htop)
+
+on:
+  schedule:
+    # Run daily at 06:30 UTC to check for arter97/android-htop or upstream htop/ncurses updates
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: "Force rebuild even if versions and submodule commit have not changed"
+        type: boolean
+        default: false
+      htop_version:
+        description: "Optional pinned htop version tag (empty = latest release)"
+        type: string
+        required: false
+      ncurses_version:
+        description: "Optional pinned ncurses version (empty = latest release)"
+        type: string
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_NDK_HOME: ""
+      ANDROID_NDK_ROOT: ""
+    steps:
+      - name: Checkout repository and submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Check for upstream changes
+        id: check
+        run: |
+          git -C third_party/android-htop fetch origin main
+          git -C third_party/android-htop checkout origin/main
+
+          new_sub="$(git -C third_party/android-htop rev-parse HEAD)"
+          old_sub="$(sed -n 's/^submodule_commit=//p' third_party/VERSIONS.txt 2>/dev/null || true)"
+          old_htop="$(sed -n 's/^htop=//p' third_party/VERSIONS.txt 2>/dev/null || true)"
+
+          latest_htop="${{ inputs.htop_version }}"
+          if [ -z "$latest_htop" ]; then
+            latest_htop="$(curl -fsSL https://api.github.com/repos/htop-dev/htop/releases/latest \
+              | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
+          fi
+
+          echo "old_sub=$old_sub new_sub=$new_sub"
+          echo "old_htop=$old_htop latest_htop=$latest_htop"
+
+          if [ "${{ inputs.force_rebuild }}" = "true" ] || [ "$new_sub" != "$old_sub" ] || [ "$latest_htop" != "$old_htop" ]; then
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "htop_version=$latest_htop" >> "$GITHUB_OUTPUT"
+
+      - name: Install host tools
+        if: steps.check.outputs.rebuild == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ncurses-bin ncurses-term unzip xz-utils file binutils
+
+      - name: Resolve latest NDK via submodule
+        if: steps.check.outputs.rebuild == 'true'
+        id: ndk
+        run: echo "name=$(./third_party/android-htop/build.sh --resolve-ndk)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Android NDK
+        if: steps.check.outputs.rebuild == 'true'
+        uses: actions/cache@v4
+        with:
+          path: third_party/android-htop/build/ndk
+          key: ndk-${{ runner.os }}-${{ steps.ndk.outputs.name }}
+
+      - name: Build and install bundled htop binaries via submodule wrapper
+        if: steps.check.outputs.rebuild == 'true'
+        env:
+          ABIS: "arm64-v8a armeabi-v7a x86_64"
+          HTOP_VERSION: ${{ steps.check.outputs.htop_version }}
+          NCURSES_VERSION: ${{ inputs.ncurses_version }}
+        run: |
+          ndk=$(echo third_party/android-htop/build/ndk/android-ndk-*)
+          if [ -d "$ndk" ]; then
+            export ANDROID_NDK_HOME="$GITHUB_WORKSPACE/$ndk"
+          fi
+          chmod +x ./scripts/build-bundled-htop.sh
+          ./scripts/build-bundled-htop.sh
+
+      - name: Set up JDK 21 and verify Gradle unit tests
+        if: steps.check.outputs.rebuild == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Run unit tests
+        if: steps.check.outputs.rebuild == 'true'
+        run: ./gradlew testDebugUnitTest --console=plain
+
+      - name: Commit and push updated binaries
+        if: steps.check.outputs.rebuild == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add third_party/android-htop third_party/VERSIONS.txt app/src/main/jniLibs
+          if git diff --cached --quiet; then
+            echo "No binary or version changes to commit."
+            exit 0
+          fi
+          htop_ver="$(sed -n 's/^htop=//p' third_party/VERSIONS.txt)"
+          ncurses_ver="$(sed -n 's/^ncurses=//p' third_party/VERSIONS.txt)"
+          sub_short="$(git -C third_party/android-htop rev-parse --short HEAD)"
+          git commit -m "chore(bundled-htop): sync arter97/android-htop @ $sub_short (htop $htop_ver, ncurses $ncurses_ver)"
+          git push origin HEAD:main

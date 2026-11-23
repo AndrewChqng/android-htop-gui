@@ -44,13 +44,16 @@ Lightweight native Android application that launches `htop` inside a native pseu
   - **Hardware Mouse**: left/middle/right clicks, drag tracking, and vertical/horizontal scroll wheel (`AXIS_VSCROLL`/`AXIS_HSCROLL`).
   - **Keyboard & IME**: hardware keyboard (`F1`–`F12`, arrows, `Ctrl` combos, `Alt` combos, `Shift+Tab`), virtual IME (`BaseInputConnection`), and an extra-keys toolbar (`ROOT`/`SHZ`/`USER`, `HTOP`/`BND`/`TOP`, `KB`, `ESC`, `TAB`, sticky `CTRL`, repeatable arrows, `F1`–`F10`, `A-`/`A+`, `↻`).
 
-## Rebuilding Bundled `htop`
+## Rebuilding & Auto-Updating Bundled `htop`
 
-Prebuilt stripped `libhtop_bundled.so` binaries (v`3.5.3` with compiled-in terminfo entries) live in `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/` via [`third_party/android-htop/build.sh`](third_party/android-htop/build.sh) (adapted from [`arter97/android-htop`](https://github.com/arter97/android-htop)). To rebuild them locally:
+[`arter97/android-htop`](https://github.com/arter97/android-htop) is mounted as a Git submodule at `third_party/android-htop` and invoked through the wrapper [`scripts/build-bundled-htop.sh`](scripts/build-bundled-htop.sh) (which builds `arm64-v8a`, `armeabi-v7a`, and `x86_64`, verifies 16 KB ELF page alignment, installs `app/src/main/jniLibs/<abi>/libhtop_bundled.so`, and writes [`third_party/VERSIONS.txt`](third_party/VERSIONS.txt)).
+
+- **Automatic Updates**: [`.github/workflows/update-bundled-htop.yml`](.github/workflows/update-bundled-htop.yml) runs daily (and on `workflow_dispatch`) to sync the `arter97/android-htop` submodule and upstream `htop`/`ncurses` releases, rebuild `jniLibs`, verify unit tests, and commit updates to `main`.
+- **Local Rebuild**:
 
 ```bash
 ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/28.2.13676358 \
-  third_party/android-htop/build.sh --install-jni
+  ./scripts/build-bundled-htop.sh
 ```
 
 ## Build & Install

@@ -4,14 +4,14 @@ This project includes or adapts third-party open-source components:
 
 ## arter97/android-htop
 - **Repository**: <https://github.com/arter97/android-htop>
-- **Component**: [`third_party/android-htop/build.sh`](third_party/android-htop/build.sh)
+- **Component**: Git submodule at `third_party/android-htop`, invoked via [`scripts/build-bundled-htop.sh`](scripts/build-bundled-htop.sh)
 - **Usage**: Cross-compilation workflow and compiled-in fallback terminfo strategy for self-contained Android `htop` binaries.
 
 ## htop
 - **Repository**: <https://github.com/htop-dev/htop>
 - **License**: GNU General Public License v2.0 only (`GPL-2.0-only`)
 - **Component**: Bundled standalone executable `app/src/main/jniLibs/<abi>/libhtop_bundled.so`
-- **Usage**: Launched as a separate subprocess via native PTY `execve` when the user explicitly chooses **Bundled htop (`BND`)**. Exact build configuration and source reproduction steps are provided in [`third_party/android-htop/build.sh`](third_party/android-htop/build.sh) and [`third_party/android-htop/VERSIONS.txt`](third_party/android-htop/VERSIONS.txt).
+- **Usage**: Launched as a separate subprocess via native PTY `execve` when the user explicitly chooses **Bundled htop (`BND`)**. Exact build configuration and source reproduction steps are provided in [`scripts/build-bundled-htop.sh`](scripts/build-bundled-htop.sh) and [`third_party/VERSIONS.txt`](third_party/VERSIONS.txt).
 
 ## GNU ncurses
 - **Project**: <https://invisible-island.net/ncurses/> / <https://www.gnu.org/software/ncurses/>

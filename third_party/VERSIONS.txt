@@ -1,0 +1,5 @@
+submodule_commit=93098ef4a0313e61ad3f406d654097d7aa08830f
+ndk=28.2.13676358
+ncurses=6.6
+htop=3.5.3
+api=26
