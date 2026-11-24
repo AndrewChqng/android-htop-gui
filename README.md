@@ -45,6 +45,16 @@ Works out of the box on **LineageOS** and custom ROMs with `/system_ext/bin/htop
 
 ## Download & Install
 
+### Android Requirements
+
+- **Minimum Android version:** Android 8.0 (API 26)
+- **Target Android version:** Android 15 (API 35)
+- **Compile SDK:** Android 16 (API 36)
+
+Root and Shizuku features require an appropriately configured root solution or
+the separately installed Shizuku app. All monitor modes work only to the extent
+allowed by the device's Android and SELinux process-visibility policies.
+
 ### Option 1: Obtainium (Recommended for Auto-Updates)
 Click the **[Get it on Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.andrewchqng.htop%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FAndrewChqng%2Fandroid-htop-gui%22%2C%22author%22%3A%22AndrewChqng%22%2C%22name%22%3A%22Android%20htop%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%7D%22%7D)** badge above or add `https://github.com/AndrewChqng/android-htop-gui` in [Obtainium](https://github.com/ImranR98/Obtainium). With architecture filtering enabled, Obtainium automatically downloads the slim per-ABI APK for your device.
 
@@ -157,6 +167,27 @@ Release builds use APK Signature Scheme v2/v3 (PKCS12, RSA 4096-bit, `isMinifyEn
 ```bash
 JAVA_HOME=/home/roboy/.jdks/jdk-21 ./gradlew testDebugUnitTest assembleRelease
 ```
+
+---
+
+## Contributing
+
+Contributions are welcome. Bug reports, focused pull requests, terminal
+compatibility fixes, documentation improvements, and reproducible build fixes
+are all appreciated.
+
+Before opening a pull request:
+
+1. Describe the problem and the proposed change.
+2. Run `./gradlew testDebugUnitTest` and include a device/Android version for any
+   hardware or privilege-related change.
+3. Avoid adding tracking, advertising, network dependencies, or proprietary
+   build tools.
+4. Keep native binaries reproducible and document any new third-party
+   license or source dependency.
+
+For large changes, open an issue first so the implementation can be discussed
+before substantial work begins.
 
 ---
 
